@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Practice — Smart Interview Practice Portal</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell">
+
+  <aside class="app-sidebar">
+    <a href="index.html" class="brand"><span class="brand-mark" style="background:rgba(238,238,228,.14);">SI</span><span class="brand-name">Smart Interview</span></a>
+    <nav>
+      <a href="dashboard.html" class="side-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        Dashboard
+      </a>
+      <a href="mock-drive.html" class="side-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
+        Mock Drive
+      </a>
+      <a href="practice.html" class="side-link active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 19V6a2 2 0 0 1 2-2h9l5 5v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M14 4v5h5"/></svg>
+        Single Practice
+      </a>
+      <a href="leaderboard.html" class="side-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4a3 3 0 0 0 3 4"/><path d="M17 6h3a3 3 0 0 1-3 4"/></svg>
+        Leaderboard
+      </a>
+      <a href="history.html" class="side-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+        History
+      </a>
+      <a href="admin.html" class="side-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l8 4v5c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V7l8-4Z"/></svg>
+        Admin
+      </a>
+    </nav>
+    <div class="side-user">
+      <span class="avatar" id="sideAvatar">--</span>
+      <div><strong style="color:var(--on-navy);" id="sideName">Loading…</strong><small id="sideEmail"></small></div>
+    </div>
+    <button class="side-logout" data-logout>Log out</button>
+  </aside>
+
+  <main class="app-main">
+    <div class="app-topbar">
+      <div>
+        <h1>Single Question Practice</h1>
+        <div class="sub">Pick a subject and difficulty, then answer one question at a time.</div>
+      </div>
+    </div>
+
+    <div class="field-row" style="max-width:600px; margin-bottom:24px;">
+      <div class="field">
+        <label for="subject">Subject</label>
+        <select id="subject">
+          <option>Operating Systems</option>
+          <option>DBMS</option>
+          <option>Computer Networks</option>
+          <option>Object-Oriented Programming</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="difficulty1">Difficulty</label>
+        <select id="difficulty1"><option>Easy</option><option selected>Medium</option><option>Hard</option></select>
+      </div>
+      <div class="field" style="flex:0 0 auto; align-self:flex-end;">
+        <button class="btn btn-primary" id="getQuestionBtn" style="height:46px;">Get question</button>
+      </div>
+    </div>
+
+    <div class="q-card" id="qCard" style="display:none;">
+      <div class="q-meta">
+        <span id="qSubjectLabel"></span>
+        <span class="timer"><span class="dot"></span><span data-timer="420">07:00</span></span>
+      </div>
+      <span class="difficulty" id="qDifficulty"></span>
+      <h2 id="qText"></h2>
+      <p style="color:var(--ink-faint); margin-bottom:0;">Answer in your own words — the scoring engine looks for concept coverage, not exact phrasing.</p>
+      <textarea class="answer" id="answerBox" placeholder="Start typing your answer…"></textarea>
+      <p id="submitError" class="error-text" style="display:none;"></p>
+      <div class="q-card-foot">
+        <span class="word-count">0 words</span>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-ghost" id="skipBtn">Skip question</button>
+          <button class="btn btn-primary" id="submitBtn">Submit answer</button>
+        </div>
+      </div>
+    </div>
+    <p id="emptyState" style="color:var(--ink-faint);">Choose a subject and difficulty above, then click "Get question" to begin.</p>
+  </main>
+</div>
+<script src="js/api.js"></script>
+<script src="js/main.js"></script>
+<script>
+  Auth.requireAuth();
+  let currentSessionId = null;
+  let currentQuestion = null;
+  let startTime = null;
+
+  async function fetchQuestion() {
+    const subject = document.getElementById('subject').value;
+    const difficulty = document.getElementById('difficulty1').value;
+    const btn = document.getElementById('getQuestionBtn');
+    btn.disabled = true;
+    btn.textContent = 'Loading…';
+
+    try {
+      const started = await Api.startSession({ mode: 'single_question', category: subject, difficulty });
+      currentSessionId = started.sessionId;
+      currentQuestion = await Api.nextQuestion(currentSessionId, 'theory', subject, difficulty);
+      startTime = Date.now();
+
+      document.getElementById('emptyState').style.display = 'none';
+      document.getElementById('qCard').style.display = '';
+      document.getElementById('qSubjectLabel').textContent = `Theory · ${currentQuestion.subject}`;
+      document.getElementById('qDifficulty').textContent = currentQuestion.difficulty;
+      document.getElementById('qText').textContent = currentQuestion.question_text;
+      document.getElementById('answerBox').value = '';
+      document.getElementById('submitError').style.display = 'none';
+      document.querySelector('.word-count').textContent = '0 words';
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Get question';
+    }
+  }
+
+  document.getElementById('getQuestionBtn').addEventListener('click', fetchQuestion);
+  document.getElementById('skipBtn').addEventListener('click', fetchQuestion);
+
+  document.getElementById('submitBtn').addEventListener('click', async () => {
+    const answerText = document.getElementById('answerBox').value.trim();
+    const errorEl = document.getElementById('submitError');
+    if (!answerText) {
+      errorEl.textContent = 'Please write an answer before submitting.';
+      errorEl.style.display = 'block';
+      return;
+    }
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Scoring…';
+    try {
+      const timeTaken = Math.round((Date.now() - startTime) / 1000);
+      await Api.submitRound(currentSessionId, {
+        round_type: 'theory',
+        question_id: currentQuestion._id,
+        response: { answer_text: answerText },
+        time_taken: timeTaken,
+        tab_switch_count: 0,
+      });
+      await Api.completeSession(currentSessionId);
+      window.location.href = `results.html?session=${currentSessionId}`;
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Submit answer';
+    }
+  });
+</script>
+</body>
+</html>

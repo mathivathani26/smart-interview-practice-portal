@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mock Drive Result — Smart Interview Practice Portal</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="app-shell">
+
+  <aside class="app-sidebar">
+    <a href="index.html" class="brand"><span class="brand-mark" style="background:rgba(238,238,228,.14);">SI</span><span class="brand-name">Smart Interview</span></a>
+    <nav>
+      <a href="dashboard.html" class="side-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        Dashboard
+      </a>
+      <a href="mock-drive.html" class="side-link active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>
+        Mock Drive
+      </a>
+      <a href="practice.html" class="side-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 19V6a2 2 0 0 1 2-2h9l5 5v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2Z"/><path d="M14 4v5h5"/></svg>
+        Single Practice
+      </a>
+      <a href="leaderboard.html" class="side-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4a3 3 0 0 0 3 4"/><path d="M17 6h3a3 3 0 0 1-3 4"/></svg>
+        Leaderboard
+      </a>
+      <a href="history.html" class="side-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+        History
+      </a>
+      <a href="admin.html" class="side-link">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l8 4v5c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V7l8-4Z"/></svg>
+        Admin
+      </a>
+    </nav>
+    <div class="side-user">
+      <span class="avatar" id="sideAvatar">--</span>
+      <div><strong style="color:var(--on-navy);" id="sideName">Loading…</strong><small id="sideEmail"></small></div>
+    </div>
+    <button class="side-logout" data-logout>Log out</button>
+  </aside>
+
+  <main class="app-main">
+    <div class="app-topbar">
+      <div>
+        <h1 id="driveTitle">Mock Drive Complete</h1>
+        <div class="sub" id="driveSub">Loading…</div>
+      </div>
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-ghost" data-download-report>Download PDF Report</button>
+        <a href="mock-drive.html" class="btn btn-primary">Start another drive</a>
+      </div>
+    </div>
+
+    <div class="panel" style="display:flex; gap:34px; align-items:center; flex-wrap:wrap;">
+      <svg class="score-ring" id="overallRing" data-ring data-score="0" viewBox="0 0 140 140" style="width:140px; height:140px; flex-shrink:0;">
+        <circle class="track" cx="70" cy="70" r="55" stroke-width="10"></circle>
+        <circle class="fill" cx="70" cy="70" r="55" stroke-width="10" transform="rotate(-90 70 70)"></circle>
+        <text class="ring-value" x="70" y="66" text-anchor="middle" font-size="30">0%</text>
+        <text x="70" y="86" text-anchor="middle" fill="var(--ink-faint)" font-family="var(--font-mono)">overall</text>
+      </svg>
+      <div>
+        <h3 style="margin-bottom:6px;" id="headline">—</h3>
+        <p style="margin-bottom:0; max-width:56ch;" id="summaryText"></p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h3>Round-by-round breakdown</h3></div>
+      <div id="roundCards"><p style="color:var(--ink-faint);">Loading…</p></div>
+    </div>
+
+    <div class="grid-2">
+      <div class="panel">
+        <div class="panel-head"><h3>Concepts to revisit</h3></div>
+        <div class="concept-list" id="conceptsToRevisit"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h3>Where you rank</h3><a href="leaderboard.html" style="color:var(--red-mark); font-weight:600; text-decoration:none;">View full leaderboard →</a></div>
+        <p style="margin:0;" id="rankText">—</p>
+      </div>
+    </div>
+
+    <!-- Printable report sheet, shown only when the browser print dialog is triggered -->
+    <div class="report-sheet" style="display:none;" id="printableReport">
+      <div class="report-head">
+        <span class="eyebrow">Smart Interview Practice Portal</span>
+        <h2 id="printTitle">Mock Drive Report</h2>
+        <p style="margin:0; color:var(--ink-faint);">Generated for demonstration purposes</p>
+      </div>
+      <p id="printOverall"></p>
+      <p id="printRounds"></p>
+      <p id="printConcepts"></p>
+    </div>
+  </main>
+</div>
+<script src="js/api.js"></script>
+<script src="js/main.js"></script>
+<script src="js/drive.js?v=2"></script>
+<script>
+  Auth.requireAuth();
+
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get('session');
+  const ICONS = { aptitude: '🧮', coding: '{ }', theory: '✎' };
+  const LABELS = { aptitude: 'Aptitude Round', coding: 'Coding Round', theory: 'Theory Round' };
+
+  (async function load() {
+    if (document.readyState === 'loading') {
+      await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+    }
+    if (!sessionId) { document.getElementById('roundCards').innerHTML = '<p class="error-text">No session specified.</p>'; return; }
+    try {
+      const data = await Api.getSession(sessionId);
+      const { session, round_attempts } = data;
+      Drive.clear();
+
+      const companyName = session.company ? session.company.name : 'Practice';
+      document.getElementById('driveTitle').textContent = `Mock Drive Complete — ${companyName}`;
+      const configuredRounds = session.drive_rounds || [];
+      if (configuredRounds.length) {
+        const expectedQuestions = configuredRounds.reduce((sum, round) => sum + round.question_count, 0);
+        const configuredMinutes = Math.round(configuredRounds.reduce((sum, round) => sum + round.time_limit_seconds, 0) / 60);
+        document.getElementById('driveSub').textContent = `${round_attempts.length} of ${expectedQuestions} questions attempted · ${configuredRounds.length} rounds · ${configuredMinutes} minutes allotted`;
+      } else {
+        const totalTime = round_attempts.reduce((sum, a) => sum + (a.time_taken || 0), 0);
+        document.getElementById('driveSub').textContent = `All ${round_attempts.length} round${round_attempts.length === 1 ? '' : 's'} finished · ${Math.round(totalTime / 60)} minutes total`;
+      }
+
+      const overallScore = session.total_score || 0;
+      const ring = document.getElementById('overallRing');
+      ring.dataset.score = overallScore;
+      drawRing(ring);
+
+      const weakest = [...round_attempts].sort((a, b) => a.round_score - b.round_score)[0];
+      document.getElementById('headline').textContent = overallScore >= 75
+        ? 'Strong overall attempt.'
+        : weakest
+          ? `Solid attempt — the ${weakest.round_type} round needs the most work.`
+          : 'No questions were answered in this drive.';
+      document.getElementById('summaryText').textContent = `Your overall score across this drive was ${overallScore}%. Review the round breakdown below to see where to focus next.`;
+
+      const attemptedByType = {};
+      document.getElementById('roundCards').innerHTML = round_attempts.length ? round_attempts.map(a => {
+        attemptedByType[a.round_type] = (attemptedByType[a.round_type] || 0) + 1;
+        const roundSpec = configuredRounds.find(round => round.round_type === a.round_type);
+        const assignedIndex = roundSpec
+          ? roundSpec.question_ids.findIndex(questionId => String(questionId) === String(a.question_id))
+          : -1;
+        const questionNumber = assignedIndex >= 0 ? assignedIndex + 1 : attemptedByType[a.round_type];
+        let meta = '';
+        if (a.round_type === 'aptitude') meta = `${a.category} · ${a.round_score === 100 ? 'Correct' : 'Incorrect'} · ${a.time_taken}s`;
+        if (a.round_type === 'coding') {
+          meta = `${a.test_cases_passed}/${a.test_cases_total} test cases passed · ${a.time_taken}s`;
+          if (a.paste_count > 0) meta += ` · ${a.paste_count} paste${a.paste_count === 1 ? '' : 's'} detected`;
+        }
+        if (a.round_type === 'theory') meta = `Jaccard ${a.jaccard_score} · TF-IDF ${a.tfidf_score} · ${a.time_taken}s`;
+        if (roundSpec) {
+          meta = `Question ${questionNumber} of ${roundSpec.question_count} · ${Math.ceil(roundSpec.time_limit_seconds / 60)} min allotted · ${meta}`;
+        }
+
+        let approachRow = '';
+        if (a.round_type === 'coding' && ((a.matched_approach_tags && a.matched_approach_tags.length) || (a.missing_approach_tags && a.missing_approach_tags.length))) {
+          const chips = [
+            ...(a.matched_approach_tags || []).map(t => `<span class="concept-chip hit">${t}</span>`),
+            ...(a.missing_approach_tags || []).map(t => `<span class="concept-chip miss">${t}</span>`),
+          ].join('');
+          approachRow = `<div class="concept-list" style="margin-top:8px;">${chips}</div>`;
+        }
+
+        return `
+          <div class="round-result-card">
+            <div class="rr-icon ${a.round_type}">${ICONS[a.round_type]}</div>
+            <div><h4>${LABELS[a.round_type]}${roundSpec ? ` · Question ${questionNumber} of ${roundSpec.question_count}` : ''}</h4><div class="rr-meta">${meta}</div>${approachRow}</div>
+            <div class="rr-score">${a.round_score}%</div>
+          </div>`;
+      }).join('') : '<p style="color:var(--ink-faint);">There were no answered questions to score.</p>';
+
+      const missing = round_attempts.flatMap(a => a.missing_concepts || []);
+      document.getElementById('conceptsToRevisit').innerHTML = missing.length
+        ? missing.map(c => `<span class="concept-chip miss">${c}</span>`).join('')
+        : '<span style="color:var(--ink-faint);">Nothing missing — great coverage!</span>';
+
+      document.getElementById('printTitle').textContent = `Mock Drive Report — ${companyName}`;
+      document.getElementById('printOverall').innerHTML = `<strong>Overall Score:</strong> ${overallScore}%`;
+      document.getElementById('printRounds').innerHTML = round_attempts.map(a => `<strong>${LABELS[a.round_type]}:</strong> ${a.round_score}%`).join(' &nbsp; ');
+      document.getElementById('printConcepts').innerHTML = `<strong>Concepts to revisit:</strong> ${missing.join(', ') || 'None'}`;
+
+      if (session.company) {
+        try {
+          const lb = await Api.leaderboard(session.company._id || session.company);
+          document.getElementById('rankText').innerHTML = lb.myRank
+            ? `You scored <strong style="color:var(--ink);">${overallScore}%</strong> on the ${companyName} pattern — rank <strong style="color:var(--tutor-green);">#${lb.myRank}</strong> of ${lb.totalParticipants}.`
+            : `You scored <strong style="color:var(--ink);">${overallScore}%</strong> on the ${companyName} pattern.`;
+        } catch { /* leaderboard optional */ }
+      } else {
+        document.getElementById('rankText').textContent = 'Leaderboard ranking applies to Mock Drives only.';
+      }
+    } catch (err) {
+      document.getElementById('roundCards').innerHTML = `<p class="error-text">${err.message}</p>`;
+    }
+  })();
+</script>
+<style>
+  @media print {
+    .app-sidebar, .app-topbar, .panel:not(#printableReport) { display: none !important; }
+    #printableReport { display: block !important; }
+  }
+</style>
+</body>
+</html>

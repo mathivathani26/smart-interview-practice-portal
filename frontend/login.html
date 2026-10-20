@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Log in — Smart Interview Practice Portal</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="auth-shell">
+  <nav class="site-nav">
+    <div class="wrap">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">SI</span>
+        <span class="brand-name">Smart Interview Practice Portal</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="auth-form-col">
+    <div class="auth-form">
+      <h1>Log in to practice</h1>
+      <p style="margin-bottom:28px;">Pick up your streak where you left off.</p>
+
+      <form id="loginForm">
+        <div class="field">
+          <label for="email">College email</label>
+          <input id="email" type="email" placeholder="you@college.edu" required>
+        </div>
+        <div class="field">
+          <label for="password">Password</label>
+          <input id="password" type="password" placeholder="••••••••" required>
+        </div>
+        <div class="form-foot">
+          <label style="display:flex; align-items:center; gap:8px; font-weight:400; color:var(--ink-soft);"><input type="checkbox" style="width:auto;"> Keep me signed in</label>
+          <a href="forgot-password.html">Forgot password?</a>
+        </div>
+        <p id="loginError" class="error-text" style="display:none;"></p>
+        <button type="submit" class="btn btn-ghost btn-block btn-lg">Log in</button>
+      </form>
+
+      <p class="auth-switch">New here? <a href="register.html">Create an account</a></p>
+    </div>
+  </div>
+</div>
+<script src="js/api.js"></script>
+<script src="js/main.js"></script>
+<script>
+  async function doLogin(email, password, btn) {
+    const errorEl = document.getElementById('loginError');
+    errorEl.style.display = 'none';
+    try {
+      const data = await Api.login({ email, password });
+      Auth.setSession(data.token, data.user);
+      window.location.href = 'dashboard.html';
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = 'block';
+      if (btn) { btn.disabled = false; }
+    }
+  }
+
+  document.getElementById('loginForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    doLogin(email, password);
+  });
+</script>
+</body>
+</html>

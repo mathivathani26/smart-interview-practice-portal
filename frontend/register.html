@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create account — Smart Interview Practice Portal</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="auth-shell">
+  <nav class="site-nav">
+    <div class="wrap">
+      <a href="index.html" class="brand">
+        <span class="brand-mark">SI</span>
+        <span class="brand-name">Smart Interview Practice Portal</span>
+      </a>
+    </div>
+  </nav>
+
+  <div class="auth-form-col">
+    <div class="auth-form">
+      <h1>Create your account</h1>
+      <p style="margin-bottom:28px;">Free, and your data never leaves this portal.</p>
+
+      <form id="registerForm">
+        <div class="field-row">
+          <div class="field"><label for="fname">First name</label><input id="fname" type="text" placeholder="First name" required></div>
+          <div class="field"><label for="lname">Last name</label><input id="lname" type="text" placeholder="Last name" required></div>
+        </div>
+        <div class="field">
+          <label for="remail">College email</label>
+          <input id="remail" type="email" placeholder="you@college.edu" required>
+        </div>
+        <div class="field">
+          <label for="rpassword">Password</label>
+          <input id="rpassword" type="password" placeholder="At least 8 characters" minlength="8" required>
+        </div>
+        <p id="registerError" class="error-text" style="display:none;"></p>
+        <button type="submit" class="btn btn-primary btn-block btn-lg">Create account</button>
+      </form>
+
+      <p class="auth-switch">Already registered? <a href="login.html">Log in</a></p>
+    </div>
+  </div>
+</div>
+<script src="js/api.js"></script>
+<script src="js/main.js"></script>
+<script>
+  document.getElementById('registerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById('registerError');
+    errorEl.style.display = 'none';
+    const payload = {
+      firstName: document.getElementById('fname').value.trim(),
+      lastName: document.getElementById('lname').value.trim(),
+      email: document.getElementById('remail').value.trim(),
+      password: document.getElementById('rpassword').value,
+    };
+    try {
+      const data = await Api.register(payload);
+      Auth.setSession(data.token, data.user);
+      window.location.href = 'dashboard.html';
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = 'block';
+    }
+  });
+</script>
+</body>
+</html>
