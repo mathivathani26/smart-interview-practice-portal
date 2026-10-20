@@ -2,7 +2,7 @@
    Talks to the Express backend in /backend. Change API_BASE if you deploy
    the backend somewhere other than localhost:5000. */
 
-const API_BASE = "http://localhost:5000/api";
+const API_BASE = "https://smart-interview-practice-portal.onrender.com/api";
 
 const Auth = {
   getToken() { return localStorage.getItem("sip_token"); },
