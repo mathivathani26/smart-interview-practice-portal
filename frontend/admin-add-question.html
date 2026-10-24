@@ -57,6 +57,10 @@
             <label for="aText">Question text</label>
             <textarea id="aText" rows="3" placeholder="Enter question statement"></textarea>
           </div>
+          <div class="field">
+            <label for="aExplanation">Explanation</label>
+            <textarea id="aExplanation" rows="3" placeholder="Explain why the correct option is correct"></textarea>
+          </div>
 
           <div class="field">
             <label>Options</label>
@@ -89,6 +93,15 @@
           <div class="field">
             <label for="cDesc">Description</label>
             <textarea id="cDesc" rows="3" placeholder="Describe the problem statement"></textarea>
+          </div>
+          <div class="field-row">
+            <div class="field"><label for="cInputFormat">Input format</label><textarea id="cInputFormat" rows="2"></textarea></div>
+            <div class="field"><label for="cOutputFormat">Output format</label><textarea id="cOutputFormat" rows="2"></textarea></div>
+          </div>
+          <div class="field"><label for="cConstraints">Constraints (one per line)</label><textarea id="cConstraints" rows="3"></textarea></div>
+          <div class="field-row">
+            <div class="field"><label for="cSampleInput">Sample input</label><textarea id="cSampleInput" rows="2"></textarea></div>
+            <div class="field"><label for="cSampleOutput">Sample output</label><textarea id="cSampleOutput" rows="2"></textarea></div>
           </div>
           <div class="field">
             <label for="cTags">Tags (comma-separated)</label>
@@ -129,6 +142,18 @@
           <div class="field">
             <label for="tConcepts">Ideal concepts (comma-separated)</label>
             <input id="tConcepts" placeholder="context switching, thread, memory" />
+          </div>
+          <div class="field">
+            <label for="tReference">Reference answer</label>
+            <textarea id="tReference" rows="5" placeholder="A concise technically correct answer"></textarea>
+          </div>
+          <div class="field">
+            <label for="tRubric">Marking rubric (one criterion per line)</label>
+            <textarea id="tRubric" rows="4" placeholder="Correctly explains the key mechanism"></textarea>
+          </div>
+          <div class="field">
+            <label for="tMaxMarks">Maximum marks</label>
+            <input id="tMaxMarks" type="number" min="1" step="1" value="10">
           </div>
         </div>
 
@@ -190,6 +215,7 @@
         options: entries.map((entry) => entry.text),
         correct_options: correctOptions,
         difficulty: document.getElementById('qDiff').value,
+        explanation: document.getElementById('aExplanation').value.trim(),
       };
     }
 
@@ -224,6 +250,11 @@
           await Api.admin.createCoding({
             title: document.getElementById('cTitle').value.trim(),
             description: document.getElementById('cDesc').value.trim(),
+            input_format: document.getElementById('cInputFormat').value.trim(),
+            output_format: document.getElementById('cOutputFormat').value.trim(),
+            constraints: document.getElementById('cConstraints').value.split('\n').map((item) => item.trim()).filter(Boolean),
+            sample_input: document.getElementById('cSampleInput').value,
+            sample_output: document.getElementById('cSampleOutput').value,
             tags: document.getElementById('cTags').value.split(',').map((tag) => tag.trim()).filter(Boolean),
             starter_code,
             test_cases: testCases,
@@ -237,6 +268,9 @@
             subject,
             question_text: questionText,
             ideal_concepts: document.getElementById('tConcepts').value.split(',').map((item) => item.trim()).filter(Boolean),
+            reference_answer: document.getElementById('tReference').value.trim(),
+            marking_rubric: document.getElementById('tRubric').value.split('\n').map((item) => item.trim()).filter(Boolean),
+            max_marks: Number(document.getElementById('tMaxMarks').value),
             difficulty: document.getElementById('qDiff').value,
           });
         }

@@ -120,7 +120,8 @@
       Drive.clear();
 
       const companyName = session.company ? session.company.name : 'Practice';
-      document.getElementById('driveTitle').textContent = `Mock Drive Complete — ${companyName}`;
+      const driveName = session.drive_name || (session.drive && session.drive.name) || '';
+      document.getElementById('driveTitle').textContent = `Mock Drive Complete — ${companyName}${driveName ? ` · ${driveName}` : ''}`;
       const configuredRounds = session.drive_rounds || [];
       if (configuredRounds.length) {
         const expectedQuestions = configuredRounds.reduce((sum, round) => sum + round.question_count, 0);
@@ -158,7 +159,12 @@
           meta = `${a.test_cases_passed}/${a.test_cases_total} test cases passed · ${a.time_taken}s`;
           if (a.paste_count > 0) meta += ` · ${a.paste_count} paste${a.paste_count === 1 ? '' : 's'} detected`;
         }
-        if (a.round_type === 'theory') meta = `Jaccard ${a.jaccard_score} · TF-IDF ${a.tfidf_score} · ${a.time_taken}s`;
+        if (a.round_type === 'theory') {
+          const marks = a.theory_max_marks == null ? '' : ` · ${a.theory_marks_awarded}/${a.theory_max_marks} marks`;
+          const status = a.theory_status ? ` · ${a.theory_status}` : '';
+          const feedback = a.theory_feedback ? ` · ${a.theory_feedback}` : '';
+          meta = `Jaccard ${a.jaccard_score} · TF-IDF ${a.tfidf_score}${marks}${status}${feedback} · ${a.time_taken}s`;
+        }
         if (roundSpec) {
           meta = `Question ${questionNumber} of ${roundSpec.question_count} · ${Math.ceil(roundSpec.time_limit_seconds / 60)} min allotted · ${meta}`;
         }
@@ -192,10 +198,10 @@
 
       if (session.company) {
         try {
-          const lb = await Api.leaderboard(session.company._id || session.company);
+          const lb = await Api.leaderboard(session.company._id || session.company, session.mock_drive);
           document.getElementById('rankText').innerHTML = lb.myRank
-            ? `You scored <strong style="color:var(--ink);">${overallScore}%</strong> on the ${companyName} pattern — rank <strong style="color:var(--tutor-green);">#${lb.myRank}</strong> of ${lb.totalParticipants}.`
-            : `You scored <strong style="color:var(--ink);">${overallScore}%</strong> on the ${companyName} pattern.`;
+            ? `You scored <strong style="color:var(--ink);">${overallScore}%</strong> on ${driveName || `${companyName}'s drive`} — rank <strong style="color:var(--tutor-green);">#${lb.myRank}</strong> of ${lb.totalParticipants}.`
+            : `You scored <strong style="color:var(--ink);">${overallScore}%</strong> on ${driveName || `${companyName}'s drive`}.`;
         } catch { /* leaderboard optional */ }
       } else {
         document.getElementById('rankText').textContent = 'Leaderboard ranking applies to Mock Drives only.';

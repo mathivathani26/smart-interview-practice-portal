@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { assignQuestions, validateRoundSequence } = require("../utils/companyPattern");
+const { assignQuestions, validateRoundSequence, validateRoundAvailability } = require("../utils/companyPattern");
 
 function matches(question, filter) {
   if (filter.$and) return filter.$and.every((part) => matches(question, part));
@@ -17,6 +17,9 @@ function matches(question, filter) {
 
 function questionBank(questions) {
   return {
+    countDocuments(filter) {
+      return Promise.resolve(questions.filter((question) => matches(question, filter)).length);
+    },
     find(filter) {
       return {
         select() { return this; },
@@ -88,4 +91,62 @@ test("reports a missing difficulty pool instead of silently changing the request
     }, "Test Co"),
     /Test Co: Theory requires 1 Hard question, but only 0 eligible questions are available/
   );
+});
+
+test("validates available questions separately for each configured round", async () => {
+  const banks = {
+    aptitude: questionBank([{ _id: "a1", category: "quantitative", difficulty: "Easy" }]),
+    theory: questionBank([{ _id: "t1", subject: "DBMS", difficulty: "Medium" }]),
+    coding: questionBank([{ _id: "c1", tags: ["array"], difficulty: "Easy" }]),
+  };
+  const errors = await validateRoundAvailability([
+    { round_type: "aptitude", question_count: 2, included_topics: ["quantitative"], difficulty_distribution: {} },
+    { round_type: "theory", question_count: 2, included_topics: ["DBMS"], difficulty_distribution: {} },
+    { round_type: "coding", question_count: 2, included_topics: ["array"], difficulty_distribution: {} },
+  ], banks, "Test Co");
+
+  assert.equal(errors.length, 3);
+  assert.match(errors[0], /Test Co Aptitude Round: 2 questions required, but only 1 eligible question is available/);
+  assert.match(errors[1], /Test Co Theory Round: 2 questions required, but only 1 eligible question is available/);
+  assert.match(errors[2], /Test Co Coding Round: 2 questions required, but only 1 eligible question is available/);
+});
+
+test("validates question availability against each required difficulty percentage", async () => {
+  const errors = await validateRoundAvailability([
+    {
+      round_type: "coding",
+      question_count: 4,
+      included_topics: ["array"],
+      difficulty_distribution: { easy: 50, medium: 25, hard: 25 },
+    },
+  ], {
+    coding: questionBank([
+      { _id: "e1", tags: ["array"], difficulty: "Easy" },
+      { _id: "m1", tags: ["array"], difficulty: "Medium" },
+    ]),
+  }, "Test Co");
+
+  assert.equal(errors.length, 2);
+  assert.match(errors[0], /2 Easy questions required, but only 1 eligible question is available/);
+  assert.match(errors[1], /1 Hard question required, but only 0 eligible questions are available/);
+});
+
+test("limits availability checks to questions assigned to the company", async () => {
+  const errors = await validateRoundAvailability([
+    {
+      round_type: "aptitude",
+      question_count: 2,
+      included_topics: ["quantitative"],
+      difficulty_distribution: {},
+    },
+  ], {
+    aptitude: questionBank([
+      { _id: "assigned", category: "quantitative" },
+      { _id: "unassigned", category: "quantitative" },
+      { _id: "other-category", category: "verbal" },
+    ]),
+  }, "Test Co", { aptitude: ["assigned"] });
+
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /2 questions required, but only 1 eligible question is available/);
 });

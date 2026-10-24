@@ -73,8 +73,9 @@ function shuffle(items) {
   return items;
 }
 
-function roundFilter(round, roundType, difficulty) {
+function roundFilter(round, roundType, difficulty, questionIds) {
   const filters = [];
+  if (questionIds) filters.push({ _id: { $in: questionIds } });
   if (round.category) {
     filters.push({ [roundType === "theory" ? "subject" : "category"]: round.category });
   }
@@ -87,7 +88,7 @@ function roundFilter(round, roundType, difficulty) {
   return filters.length > 1 ? { $and: filters } : filters[0] || {};
 }
 
-async function assignQuestions(Bank, round, companyName) {
+async function assignQuestions(Bank, round, companyName, questionIds) {
   const roundName = round.round_type.charAt(0).toUpperCase() + round.round_type.slice(1);
   const distribution = round.difficulty_distribution || {};
   const hasDistribution = DIFFICULTIES.some((difficulty) => distribution[difficulty] > 0);
@@ -97,7 +98,7 @@ async function assignQuestions(Bank, round, companyName) {
     const difficultyCounts = getDifficultyCounts(round.question_count, distribution);
     for (const { difficulty, count } of difficultyCounts) {
       if (count === 0) continue;
-      const candidates = await Bank.find(roundFilter(round, round.round_type, difficulty)).select("_id").lean();
+      const candidates = await Bank.find(roundFilter(round, round.round_type, difficulty, questionIds)).select("_id").lean();
       if (candidates.length < count) {
         const label = difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
         throw new Error(`${companyName}: ${roundName} requires ${count} ${label} question${count === 1 ? "" : "s"}, but only ${candidates.length} eligible question${candidates.length === 1 ? " is" : "s are"} available.`);
@@ -105,7 +106,7 @@ async function assignQuestions(Bank, round, companyName) {
       selected.push(...shuffle(candidates).slice(0, count).map((question) => question._id));
     }
   } else {
-    const candidates = await Bank.find(roundFilter(round, round.round_type)).select("_id").lean();
+    const candidates = await Bank.find(roundFilter(round, round.round_type, null, questionIds)).select("_id").lean();
     if (candidates.length < round.question_count) {
       throw new Error(`${companyName}: ${roundName} requires ${round.question_count} question${round.question_count === 1 ? "" : "s"}, but only ${candidates.length} eligible question${candidates.length === 1 ? " is" : "s are"} available.`);
     }
@@ -115,4 +116,44 @@ async function assignQuestions(Bank, round, companyName) {
   return shuffle(selected);
 }
 
-module.exports = { assignQuestions, validateRoundSequence };
+async function validateRoundAvailability(roundSequence, banks, companyName, questionIdsByType = {}) {
+  const errors = [];
+
+  for (const round of roundSequence.filter((item) => item.enabled !== false)) {
+    const Bank = banks[round.round_type];
+    const roundName = round.round_type.charAt(0).toUpperCase() + round.round_type.slice(1);
+    const distribution = round.difficulty_distribution || {};
+    const hasDistribution = DIFFICULTIES.some((difficulty) => distribution[difficulty] > 0);
+
+    if (hasDistribution) {
+      const difficultyCounts = getDifficultyCounts(round.question_count, distribution);
+      for (const { difficulty, count } of difficultyCounts) {
+        if (count === 0) continue;
+        const available = await Bank.countDocuments(roundFilter(
+          round, round.round_type, difficulty, questionIdsByType[round.round_type]
+        ));
+        if (available < count) {
+          const label = difficulty.charAt(0).toUpperCase() + difficulty.slice(1);
+          const shortage = count - available;
+          errors.push(
+            `${companyName} ${roundName} Round: ${count} ${label} question${count === 1 ? "" : "s"} required, but only ${available} eligible question${available === 1 ? " is" : "s are"} available. Add ${shortage} more or adjust the difficulty allocation.`
+          );
+        }
+      }
+    } else {
+      const available = await Bank.countDocuments(
+        roundFilter(round, round.round_type, null, questionIdsByType[round.round_type])
+      );
+      if (available < round.question_count) {
+        const shortage = round.question_count - available;
+        errors.push(
+          `${companyName} ${roundName} Round: ${round.question_count} question${round.question_count === 1 ? "" : "s"} required, but only ${available} eligible question${available === 1 ? " is" : "s are"} available. Add ${shortage} more question${shortage === 1 ? "" : "s"} or reduce the configured count.`
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
+module.exports = { assignQuestions, validateRoundSequence, validateRoundAvailability };

@@ -21,21 +21,17 @@ copy .env.example .env        (Mac/Linux: cp .env.example .env)
 ```
 
 Open `.env`:
-- `MONGO_URI` already defaults to `mongodb://localhost:27017/interviewPortal` — correct for your local install, leave it as is.
+- Set `MONGO_URI` to your MongoDB connection string. The backend does not fall back to a guessed local database.
 - Set `JWT_SECRET` to any random string, e.g. `JWT_SECRET=mySecretKey123`.
 - Keep `NODE_ENV=development` for local development. Without SMTP, password recovery displays a development-only reset link in the recovery page.
 - To send real recovery emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` in `backend/.env`. Set `FRONTEND_URL` to the origin serving the frontend (for example `http://localhost:5500`). Never commit SMTP credentials. In production, configure SMTP and set `NODE_ENV=production`; reset tokens are never returned in production responses or logs.
-- `RAPIDAPI_KEY` — leave blank for now (see "Coding round" below).
+- For production code execution, configure `RAPIDAPI_KEY` for Judge0 (see "The Coding round" below). Never commit this key.
 
-Load the question banks, companies, and two starter accounts:
+Add the practice companies, questions, assignments, and drives:
 ```
 npm run seed
 ```
-This creates:
-- **Admin account:** `admin@smartinterview.local` / `Admin@1234`
-- **Demo student account:** `demo@student.local` / `Demo@1234` (sign in through the regular login form)
-- 5 companies with round patterns (TCS, Zoho, Infosys, Amazon, Cognizant)
-- 24 theory questions (4 subjects × 3 difficulties), 27 aptitude questions (3 categories × 3 difficulties), 9 coding questions (3 per difficulty) — full Easy/Medium/Hard coverage across every category
+This additive, repeat-safe seed does not delete or replace existing data and does not create user accounts. It adds missing data for Amazon, Wipro, TCS, Infosys, Accenture, and Cognizant, including questions, company assignments, and one published practice drive per company. Register an account through the regular login form; create an Admin account separately.
 
 Start the backend:
 ```
@@ -62,14 +58,14 @@ Open the `frontend` folder in VS Code and use **Live Server** on `index.html`, s
 Submitted code is evaluated for real, using one of three methods, tried in this order:
 
 1. **Real Judge0 API** — if you set `RAPIDAPI_KEY` in `.env`, every language runs on Judge0's real compilers/interpreters.
-2. **Real local execution** (default, no setup needed) — for **Python** and **JavaScript**, the backend runs your submitted code directly: Python via a local `python3`/`python` interpreter if one is installed on your machine, and JavaScript via the same Node.js binary already running the server. This is genuine execution with a real stdin/stdout comparison — wrong code fails, correct code passes, exactly like a real judge. No internet or signup required.
-3. **Simulated (only as a last resort)** — only reached for languages with no local interpreter available and no Judge0 key set (typically C++/Java without a compiler installed, and no Judge0 key). This case is clearly labeled in the UI with a "Simulated results" badge, and is not the default path for the seeded questions (all seeded coding questions are Python).
+2. **Real local execution** (development only, no setup needed) — when `RAPIDAPI_KEY` is absent and `NODE_ENV` is not `production`, the backend can run submitted code directly using supported local interpreters.
+3. **Simulated (development only)** — unsupported languages without a local interpreter and without a Judge0 key use a simulated result, clearly labeled in the UI.
 
-Because the seed data's coding problems are all Python with proper stdin-reading starter code, **the Coding round runs on real execution by default** as long as Python 3 is installed on your machine (most systems have it already — check with `python3 --version` or `python --version` in a terminal). If neither Python nor a Judge0 key is available, only then does it fall back to simulation.
+In production, code submissions are sent to Judge0 only when `RAPIDAPI_KEY` is configured. If the key is absent, the code-run endpoint returns an unavailable response; it never runs submitted code locally or uses simulated results.
 
 ### A safety note on real local execution
 
-Running submitted code directly on your machine is intentional here since this is a single-user local practice tool — you're only ever running your own code, on your own computer. It is **not** built to be a sandboxed, multi-tenant judge, so this project should not be deployed as a public, multi-user server without adding real sandboxing (containers, resource limits, etc.) around code execution first.
+Running submitted code directly on the development machine is intended only for local practice. It is **not** a sandboxed, multi-tenant judge. Public deployments must use Judge0 for code execution; the production-mode guard disables code execution when Judge0 is not configured rather than falling back to local execution.
 
 **To enable real code execution:**
 1. Get a free key at [rapidapi.com/judge0-official/api/judge0-ce](https://rapidapi.com/judge0-official/api/judge0-ce)
@@ -85,7 +81,7 @@ Submitted code now actually compiles and runs against each test case's real stdi
 | Register / Login (JWT + bcrypt) | Fully real |
 | Theory scoring (Jaccard + TF-IDF) | Fully real, runs in Node, no external API |
 | Aptitude scoring | Fully real (instant, exact-match) |
-| Coding scoring | **Real for all 4 languages** — Python, JavaScript, C++, and Java all execute for real on your own machine, no signup or internet needed; Judge0 is only used if you additionally configure `RAPIDAPI_KEY` |
+| Coding scoring | Local execution is for development only; production requires Judge0 via `RAPIDAPI_KEY` |
 | **Coding: real verdict types (Accepted/Wrong Answer/Runtime Error/Compilation Error/TLE), time** | Real for all 4 languages via local execution; memory usage is only reported when using Judge0 |
 | **Coding: per-language starter code** | Each of the 9 seeded problems has a distinct, verified starter template for Python, JavaScript, C++, and Java — switching the language dropdown actually swaps the code shown, not just the syntax highlighting |
 | **Coding: paste detection** | Fully real — listens for paste events on the code editor, logs a count per submission |

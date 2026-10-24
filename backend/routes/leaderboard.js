@@ -8,19 +8,21 @@ const router = express.Router();
 // GET /api/leaderboard?companyId=...
 router.get("/", requireAuth, async (req, res) => {
   try {
-    const { companyId } = req.query;
+    const { companyId, driveId } = req.query;
     if (!companyId) return res.status(400).json({ message: "companyId is required" });
 
     const company = await Company.findById(companyId);
     if (!company) return res.status(404).json({ message: "Company not found" });
 
     // best score per user for this company
-    const sessions = await Session.find({ company: companyId, completed_at: { $ne: null } })
-      .populate("user", "firstName lastName")
+    const sessionFilter = { company: companyId, completed_at: { $ne: null } };
+    if (driveId) sessionFilter.mock_drive = driveId;
+    const sessions = await Session.find(sessionFilter)
+      .populate({ path: "user", select: "firstName lastName role", match: { role: "student" } })
       .sort({ total_score: -1 });
 
     const bestByUser = new Map();
-    sessions.forEach((s) => {
+    sessions.filter((session) => session.user && session.user.role === "student").forEach((s) => {
       const uid = String(s.user._id);
       if (!bestByUser.has(uid) || bestByUser.get(uid).total_score < s.total_score) {
         bestByUser.set(uid, { user: s.user, total_score: s.total_score });

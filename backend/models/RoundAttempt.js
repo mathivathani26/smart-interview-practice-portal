@@ -20,6 +20,10 @@ const roundAttemptSchema = new mongoose.Schema(
     tfidf_score: { type: Number, default: null },
     matched_concepts: [{ type: String }],
     missing_concepts: [{ type: String }],
+    theory_max_marks: { type: Number, default: null },
+    theory_marks_awarded: { type: Number, default: null },
+    theory_status: { type: String, enum: ["correct", "partial", "incorrect", "empty"], default: null },
+    theory_feedback: { type: String, default: "" },
 
     // coding-specific scoring detail
     test_cases_passed: { type: Number, default: null },

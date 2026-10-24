@@ -124,10 +124,15 @@ async function runCode(code, language, testCases) {
     return runAgainstJudge0(code, language, testCases);
   }
 
+  if (process.env.NODE_ENV === "production") {
+    const error = new Error("Judge0 must be configured for production code execution.");
+    error.code = "CODE_EXECUTION_NOT_CONFIGURED";
+    throw error;
+  }
+
   // No Judge0 key — try REAL local execution (Python via a local interpreter,
   // JavaScript via this same Node.js binary) before ever falling back to
-  // the simulated mock. This means wrong code genuinely fails and correct
-  // code genuinely passes, with zero internet or external signup required.
+  // the simulated mock. This is intended only for local development.
   if (isLocallySupported(language)) {
     return runLocal(code, language, testCases);
   }

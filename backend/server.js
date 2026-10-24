@@ -12,6 +12,10 @@ const adminRoutes = require("./routes/admin");
 
 const app = express();
 app.use(cors());
+app.use((req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  next();
+});
 app.use(express.json());
 
 connectDB();

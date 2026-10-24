@@ -130,7 +130,7 @@
     currentQuestion = state.aptitudeQuestions[state.questionIndex];
     if (!currentQuestion) return;
 
-    document.getElementById('driveTitle').textContent = `Mock Drive — ${state.companyName || 'Interview'}`;
+    document.getElementById('driveTitle').textContent = `Mock Drive — ${state.companyName || 'Interview'}${state.driveName ? ` · ${state.driveName}` : ''}`;
     document.getElementById('roundSub').textContent = `Round ${state.roundIndex + 1} of ${state.round_sequence.length} · Question ${state.questionIndex + 1} of ${state.aptitudeQuestions.length}`;
     renderStepper();
 

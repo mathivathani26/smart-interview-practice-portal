@@ -58,7 +58,7 @@
 
     <div style="margin-top:30px;">
       <button id="startDriveBtn" class="btn btn-primary btn-lg" disabled>Start Mock Drive →</button>
-      <p style="max-width:68ch; color:var(--ink-faint);">Your selected company's aptitude, coding, and theory rounds will begin after you start.</p>
+      <p style="max-width:68ch; color:var(--ink-faint);">Choose a published drive to see its independent Aptitude, Coding, and Theory rounds.</p>
       <p id="startDriveError" class="error-text" role="alert" aria-live="polite" hidden></p>
     </div>
   </main>
@@ -71,6 +71,7 @@
 
   const ICONS = { aptitude: "🧮", coding: "{ }", theory: "✎" };
   let selectedCompany = null;
+  let selectedDrive = null;
   let companies = [];
 
   function escapeHtml(value) {
@@ -82,32 +83,36 @@
   function renderCompanies() {
     const grid = document.getElementById('companyGrid');
     if (companies.length === 0) {
-      grid.innerHTML = '<p style="color:var(--ink-faint);">No companies yet — an admin needs to add one.</p>';
+      grid.innerHTML = '<p style="color:var(--ink-faint);">No published drives are currently available.</p>';
       return;
     }
     grid.innerHTML = companies.map(c => {
-      const rounds = ['aptitude', 'coding', 'theory'].map(type => {
-        const spec = c.round_sequence.find(r => r.round_type === type);
-        const enabled = spec && spec.enabled !== false;
-        return `<div class="pi ${type} ${enabled ? '' : 'off'}"><div class="pi-circle">${ICONS[type]}</div><span class="pi-count">${enabled ? spec.question_count : '—'}</span></div>`;
-      }).join('');
       return `
-        <div class="company-card ${c.has_pattern === false ? 'needs-setup' : ''}" data-id="${c.id}">
+        <div class="company-card" data-company-id="${c.id}">
           <h4>${escapeHtml(c.name)}</h4>
           <p class="company-sub">${escapeHtml(c.description)}</p>
-          <div class="pattern-icons">${rounds}</div>
-          ${c.has_pattern === false ? '<p class="company-setup-note">Admin setup required before starting</p>' : ''}
+          <div class="drive-choice-list">${c.drives.map(drive => {
+            const rounds = ['aptitude', 'coding', 'theory'].map(type => {
+              const spec = drive.round_sequence.find(round => round.round_type === type && round.enabled !== false);
+              return `<div class="pi ${type} ${spec ? '' : 'off'}"><div class="pi-circle">${ICONS[type]}</div><span class="pi-count">${spec ? spec.question_count : '—'}</span></div>`;
+            }).join('');
+            return `<button type="button" class="drive-choice" data-drive-id="${escapeHtml(drive.id)}">
+              <strong>${escapeHtml(drive.name)}</strong>
+              <span class="pattern-icons">${rounds}</span>
+            </button>`;
+          }).join('')}</div>
         </div>`;
     }).join('');
 
-    document.querySelectorAll('.company-card').forEach(card => {
-      card.addEventListener('click', () => {
-        document.querySelectorAll('.company-card').forEach(c => c.classList.remove('selected'));
-        card.classList.add('selected');
-        selectedCompany = companies.find(c => c.id === card.dataset.id);
+    document.querySelectorAll('.drive-choice').forEach(button => {
+      button.addEventListener('click', () => {
+        document.querySelectorAll('.drive-choice').forEach(item => item.classList.remove('selected'));
+        button.classList.add('selected');
+        selectedCompany = companies.find(company => company.drives.some(drive => drive.id === button.dataset.driveId));
+        selectedDrive = selectedCompany.drives.find(drive => drive.id === button.dataset.driveId);
         const startButton = document.getElementById('startDriveBtn');
-        startButton.disabled = selectedCompany.has_pattern === false;
-        startButton.textContent = selectedCompany.has_pattern === false ? 'Configuration required' : 'Start Mock Drive →';
+        startButton.disabled = false;
+        startButton.textContent = `Start ${selectedDrive.name} →`;
       });
     });
   }
@@ -129,10 +134,11 @@
     btn.disabled = true;
     btn.textContent = 'Starting…';
     try {
-      const data = await Api.startSession({ mode: 'mock_drive', companyId: selectedCompany.id });
+      const data = await Api.startSession({ mode: 'mock_drive', driveId: selectedDrive.id });
       Drive.save({
         sessionId: data.sessionId,
         companyName: data.company.name,
+        driveName: data.drive.name,
         round_sequence: data.round_sequence,
         roundIndex: 0,
         questionIndex: 0,

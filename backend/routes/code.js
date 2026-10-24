@@ -21,6 +21,9 @@ router.post("/run", requireAuth, async (req, res) => {
 
     res.json({ results, mockJudge: isMockMode(language) });
   } catch (err) {
+    if (err && err.code === "CODE_EXECUTION_NOT_CONFIGURED") {
+      return res.status(503).json({ message: "Code execution is unavailable because Judge0 is not configured in production." });
+    }
     console.error(err);
     res.status(500).json({ message: "Server error running code" });
   }

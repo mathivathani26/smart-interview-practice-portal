@@ -113,10 +113,14 @@
       drawRing(ring);
 
       const missingCount = (attempt.missing_concepts || []).length;
-      document.getElementById('headline').textContent = missingCount === 0 ? 'Full coverage — nice work.' : `Solid attempt — ${missingCount} concept${missingCount === 1 ? '' : 's'} missing.`;
-      document.getElementById('summaryText').textContent = missingCount === 0
-        ? 'You covered every key concept the scoring engine looked for.'
-        : `Add: ${attempt.missing_concepts.join(', ')} to make this interview-ready.`;
+      document.getElementById('headline').textContent = attempt.theory_status
+        ? `${attempt.theory_status.charAt(0).toUpperCase()}${attempt.theory_status.slice(1)} answer`
+        : (missingCount === 0 ? 'Full coverage — nice work.' : `Solid attempt — ${missingCount} concept${missingCount === 1 ? '' : 's'} missing.`);
+      document.getElementById('summaryText').textContent = attempt.theory_feedback
+        ? `${attempt.theory_feedback}${attempt.theory_max_marks == null ? '' : ` Marks: ${attempt.theory_marks_awarded}/${attempt.theory_max_marks}.`}`
+        : (missingCount === 0
+          ? 'You covered every key concept the scoring engine looked for.'
+          : `Add: ${attempt.missing_concepts.join(', ')} to make this interview-ready.`);
 
       document.getElementById('jaccardVal').textContent = attempt.jaccard_score;
       document.getElementById('tfidfVal').textContent = attempt.tfidf_score;

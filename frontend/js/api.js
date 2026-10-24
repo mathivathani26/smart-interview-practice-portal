@@ -20,13 +20,40 @@ const Auth = {
   },
   isLoggedIn() { return !!this.getToken(); },
   isAdmin() { const u = this.getUser(); return !!u && u.role === "admin"; },
-  logout() { this.clearSession(); window.location.href = "login.html"; },
-  requireAuth() { if (!this.isLoggedIn()) window.location.href = "login.html"; },
+  async logout() {
+    try {
+      if (this.getToken()) await apiRequest("/auth/logout", { method: "POST" });
+    } catch (err) {
+      console.error("Server logout failed; clearing the local session anyway.", err);
+    } finally {
+      this.clearSession();
+      document.documentElement.style.visibility = "hidden";
+      window.location.replace("login.html");
+    }
+  },
+  requireAuth() {
+    document.documentElement.dataset.authRequired = "true";
+    if (!this.isLoggedIn()) {
+      window.location.replace("login.html");
+      return false;
+    }
+    return true;
+  },
   requireAdmin() {
-    this.requireAuth();
-    if (!this.isAdmin()) { alert("Admin access required."); window.location.href = "dashboard.html"; }
+    if (!this.requireAuth()) return;
+    document.documentElement.dataset.adminRequired = "true";
+    if (!this.isAdmin()) { alert("Admin access required."); window.location.replace("dashboard.html"); }
   },
 };
+
+window.addEventListener("pageshow", () => {
+  const page = document.documentElement;
+  if (page.dataset.authRequired && !Auth.isLoggedIn()) {
+    window.location.replace("login.html");
+  } else if (page.dataset.adminRequired && !Auth.isAdmin()) {
+    window.location.replace("dashboard.html");
+  }
+});
 
 async function apiRequest(path, { method = "GET", body, auth = true } = {}) {
   const headers = { "Content-Type": "application/json" };
@@ -79,7 +106,11 @@ const Api = {
 
   runCode: (payload) => apiRequest("/code/run", { method: "POST", body: payload }),
 
-  leaderboard: (companyId) => apiRequest(`/leaderboard?companyId=${companyId}`),
+  leaderboard: (companyId, driveId) => {
+    const params = new URLSearchParams({ companyId });
+    if (driveId) params.set("driveId", driveId);
+    return apiRequest(`/leaderboard?${params}`);
+  },
 
   admin: {
     listAptitude: () => apiRequest("/admin/questions/aptitude"),
@@ -96,7 +127,12 @@ const Api = {
 
     listCompanies: () => apiRequest("/admin/companies"),
     createCompany: (payload) => apiRequest("/admin/companies", { method: "POST", body: payload }),
+    validatePattern: (companyId, round_sequence) => apiRequest(`/admin/companies/${companyId}/validate-pattern`, { method: "POST", body: { round_sequence } }),
     updatePattern: (companyId, round_sequence) => apiRequest(`/admin/companies/${companyId}/pattern`, { method: "PUT", body: { round_sequence } }),
+    createDrive: (companyId, payload) => apiRequest(`/admin/companies/${companyId}/drives`, { method: "POST", body: payload }),
+    updateDrive: (driveId, payload) => apiRequest(`/admin/drives/${driveId}`, { method: "PUT", body: payload }),
+    updateDriveStatus: (driveId, status) => apiRequest(`/admin/drives/${driveId}/status`, { method: "PUT", body: { status } }),
+    deleteDrive: (driveId) => apiRequest(`/admin/drives/${driveId}`, { method: "DELETE" }),
     deleteCompany: (id) => apiRequest(`/admin/companies/${id}`, { method: "DELETE" }),
   },
 };

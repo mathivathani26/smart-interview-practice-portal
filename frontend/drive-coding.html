@@ -67,6 +67,7 @@
           <div class="problem-desc">
             <p id="qDescription"></p>
             <div class="tag-row" id="qTags"></div>
+            <div id="problemDetails" style="margin-top:16px;"></div>
           </div>
         </div>
 
@@ -217,7 +218,7 @@
       window.location.href = Drive.nextRoundUrl(state);
       return;
     }
-    document.getElementById('driveTitle').textContent = `Mock Drive — ${state.companyName}`;
+    document.getElementById('driveTitle').textContent = `Mock Drive — ${state.companyName}${state.driveName ? ` · ${state.driveName}` : ''}`;
     const spec = Drive.currentRoundSpec(state);
     document.getElementById('roundSub').textContent = `Round ${state.roundIndex + 1} of ${state.round_sequence.length} · Problem ${state.questionIndex + 1} of ${spec.question_count}`;
     renderStepper();
@@ -233,7 +234,17 @@
       document.getElementById('qDifficulty').textContent = currentQuestion.difficulty;
       document.getElementById('qTitle').textContent = currentQuestion.title;
       document.getElementById('qDescription').textContent = currentQuestion.description;
-      document.getElementById('qTags').innerHTML = (currentQuestion.tags || []).map(t => `<span class="tag-chip">${t}</span>`).join('');
+      document.getElementById('qTags').innerHTML = (currentQuestion.tags || []).map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('');
+      const detailParts = [];
+      if (currentQuestion.input_format) detailParts.push(`<p><strong>Input format</strong><br>${escapeHtml(currentQuestion.input_format)}</p>`);
+      if (currentQuestion.output_format) detailParts.push(`<p><strong>Output format</strong><br>${escapeHtml(currentQuestion.output_format)}</p>`);
+      if (currentQuestion.constraints && currentQuestion.constraints.length) {
+        detailParts.push(`<p><strong>Constraints</strong></p><ul>${currentQuestion.constraints.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>`);
+      }
+      if (currentQuestion.sample_input || currentQuestion.sample_output) {
+        detailParts.push(`<p><strong>Sample input</strong></p><pre>${escapeHtml(currentQuestion.sample_input || '')}</pre><p><strong>Sample output</strong></p><pre>${escapeHtml(currentQuestion.sample_output || '')}</pre>`);
+      }
+      document.getElementById('problemDetails').innerHTML = detailParts.join('');
       setCode(currentQuestion.starter_code[document.getElementById('languageSelect').value] || '');
       codeByLanguage = {}; // fresh question — clear any per-language drafts from the previous one
       document.getElementById('languageSelect').dataset.prevValue = document.getElementById('languageSelect').value;
@@ -243,6 +254,12 @@
     } catch (err) {
       document.getElementById('loadingMsg').textContent = err.message;
     }
+  }
+
+  function escapeHtml(value) {
+    return String(value || '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[char]);
   }
 
   document.getElementById('languageSelect').addEventListener('change', (e) => {

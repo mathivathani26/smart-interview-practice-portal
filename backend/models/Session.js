@@ -22,6 +22,8 @@ const sessionSchema = new mongoose.Schema(
   {
     user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     company: { type: mongoose.Schema.Types.ObjectId, ref: "Company", default: null },
+    mock_drive: { type: mongoose.Schema.Types.ObjectId, ref: "MockDrive", default: null },
+    drive_name: { type: String, default: null },
     mode: { type: String, enum: ["mock_drive", "single_question"], required: true },
     drive_rounds: { type: [assignedRoundSchema], default: [] },
     total_score: { type: Number, default: null },

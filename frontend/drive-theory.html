@@ -100,7 +100,7 @@
       window.location.href = Drive.nextRoundUrl(state);
       return;
     }
-    document.getElementById('driveTitle').textContent = `Mock Drive — ${state.companyName}`;
+    document.getElementById('driveTitle').textContent = `Mock Drive — ${state.companyName}${state.driveName ? ` · ${state.driveName}` : ''}`;
     const spec = Drive.currentRoundSpec(state);
     document.getElementById('roundSub').textContent = `Round ${state.roundIndex + 1} of ${state.round_sequence.length} · Question ${state.questionIndex + 1} of ${spec.question_count}`;
     renderStepper();

@@ -91,6 +91,36 @@
         <div id="roundSettingsFields"></div>
         <button type="button" class="btn btn-primary" id="savePatternBtn">Save company settings</button>
       </section>
+      <section class="company-settings">
+        <div class="panel-head"><h2>Independent mock drives</h2></div>
+        <p class="small-muted">Each drive has its own rounds and publish status. Draft drives are not visible to students; publishing requires all configured questions to be available.</p>
+        <div class="field-row">
+          <div class="field">
+            <label for="driveCompanySelect">Company</label>
+            <select id="driveCompanySelect"><option value="">Loading companies…</option></select>
+          </div>
+          <div class="field">
+            <label for="driveSelect">Drive to edit</label>
+            <select id="driveSelect"><option value="">Create a new drive</option></select>
+          </div>
+          <div class="field">
+            <label for="driveName">Drive name</label>
+            <input id="driveName" type="text" maxlength="100" placeholder="e.g. Advanced Mock Drive">
+          </div>
+        </div>
+        <p id="driveMessage" class="error-text" role="status" aria-live="polite" style="display:none;"></p>
+        <div id="driveRoundSettingsFields"></div>
+        <div class="button-row">
+          <button type="button" class="btn btn-ghost" id="newDriveBtn">New drive</button>
+          <button type="button" class="btn btn-primary" id="saveDriveBtn">Save as draft</button>
+          <button type="button" class="btn btn-ghost" id="publishDriveBtn" disabled>Publish</button>
+          <button type="button" class="btn btn-ghost" id="unpublishDriveBtn" disabled>Unpublish</button>
+        </div>
+        <table class="admin-table" style="margin-top:24px;">
+          <thead><tr><th>Company</th><th>Drive</th><th>Status</th><th>Aptitude</th><th>Coding</th><th>Theory</th><th>Action</th></tr></thead>
+          <tbody id="drivesBody"><tr><td colspan="7" style="color:var(--ink-faint);">Loading drives…</td></tr></tbody>
+        </table>
+      </section>
     </div>
   </main>
 </div>
@@ -188,6 +218,16 @@
       if (select.value) renderRoundSettings(companies.find(company => company.id === select.value));
       else document.getElementById('roundSettingsFields').innerHTML = '';
 
+      const driveCompanySelect = document.getElementById('driveCompanySelect');
+      const selectedDriveCompany = driveCompanySelect.value;
+      const selectedDriveId = document.getElementById('driveSelect').value;
+      driveCompanySelect.innerHTML = companies.map(company =>
+        `<option value="${escapeHtml(company.id)}">${escapeHtml(company.name)}</option>`
+      ).join('') || '<option value="">No companies yet</option>';
+      if (companies.some(company => company.id === selectedDriveCompany)) driveCompanySelect.value = selectedDriveCompany;
+      renderDriveList(companies);
+      loadDriveEditor(companies.find(company => company.id === driveCompanySelect.value), selectedDriveId);
+
       document.querySelectorAll('[data-delete-company]').forEach(btn => {
         btn.addEventListener('click', async () => {
           if (!confirm('Delete this company and its pattern?')) return;
@@ -218,11 +258,116 @@
     el.textContent = message;
     el.classList.toggle('error-text', isError);
     el.classList.toggle('success-text', !isError);
+    el.style.whiteSpace = 'pre-line';
     el.style.display = message ? 'block' : 'none';
   }
 
-  function renderRoundSettings(company) {
-    const container = document.getElementById('roundSettingsFields');
+  function validateRoundSettings(roundSequence) {
+    const errors = [];
+    let enabledCount = 0;
+
+    roundSequence.forEach(round => {
+      const label = ROUND_LABELS[round.round_type];
+      if (round.enabled) {
+        enabledCount += 1;
+        if (!Number.isInteger(round.question_count) || round.question_count <= 0) {
+          errors.push(`${label} Round: enter a positive whole-number question count.`);
+        }
+      } else if (!Number.isInteger(round.question_count) || round.question_count < 0) {
+        errors.push(`${label} Round: question count must be a non-negative whole number.`);
+      }
+      if (!Number.isInteger(round.time_limit_seconds) || round.time_limit_seconds <= 0) {
+        errors.push(`${label} Round: duration must be a positive whole number of seconds.`);
+      }
+
+      const percentages = Object.values(round.difficulty_distribution);
+      if (percentages.some(value => !Number.isInteger(value) || value < 0 || value > 100)) {
+        errors.push(`${label} Round: difficulty percentages must be whole numbers from 0 to 100.`);
+      } else {
+        const total = percentages.reduce((sum, value) => sum + value, 0);
+        if (total !== 0 && total !== 100) {
+          errors.push(`${label} Round: difficulty percentages must total 100%.`);
+        }
+      }
+    });
+
+    if (enabledCount === 0) errors.unshift('Enable at least one round.');
+    return errors;
+  }
+
+  function showDriveMessage(message, isError) {
+    const el = document.getElementById('driveMessage');
+    el.textContent = message;
+    el.classList.toggle('error-text', isError);
+    el.classList.toggle('success-text', !isError);
+    el.style.whiteSpace = 'pre-line';
+    el.style.display = message ? 'block' : 'none';
+  }
+
+  function renderDriveList(companies) {
+    const rows = companies.flatMap(company => (company.drives || []).map(drive => {
+      const find = type => drive.round_sequence.find(round => round.round_type === type && round.enabled !== false);
+      const count = (type, label) => find(type) ? `${find(type).question_count} ${label}` : '—';
+      return `<tr>
+        <td>${escapeHtml(company.name)}</td>
+        <td>${escapeHtml(drive.name)}</td>
+        <td>${escapeHtml(drive.status)}</td>
+        <td>${count('aptitude', 'questions')}</td>
+        <td>${count('coding', 'problems')}</td>
+        <td>${count('theory', 'questions')}</td>
+        <td>
+          <button class="icon-btn" data-edit-drive="${escapeHtml(drive._id)}">Edit</button>
+          <button class="icon-btn danger" data-delete-drive="${escapeHtml(drive._id)}" title="Delete drive">✕</button>
+        </td>
+      </tr>`;
+    }));
+    document.getElementById('drivesBody').innerHTML = rows.length
+      ? rows.join('')
+      : '<tr><td colspan="7" style="color:var(--ink-faint);">No independent drives configured yet.</td></tr>';
+
+    document.querySelectorAll('[data-edit-drive]').forEach(button => {
+      button.addEventListener('click', () => {
+        const company = companies.find(item => (item.drives || []).some(drive => drive._id === button.dataset.editDrive));
+        if (!company) return;
+        document.getElementById('driveCompanySelect').value = company.id;
+        loadDriveEditor(company, button.dataset.editDrive);
+        document.getElementById('driveSelect').value = button.dataset.editDrive;
+        document.getElementById('driveRoundSettingsFields').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    document.querySelectorAll('[data-delete-drive]').forEach(button => {
+      button.addEventListener('click', async () => {
+        if (!confirm('Delete this drive? Existing session results will remain in history.')) return;
+        try {
+          await Api.admin.deleteDrive(button.dataset.deleteDrive);
+          await loadPatterns();
+          showDriveMessage('Drive deleted. Existing session results were preserved.', false);
+        } catch (err) {
+          showDriveMessage(err.message, true);
+        }
+      });
+    });
+  }
+
+  function loadDriveEditor(company, selectedDriveId = '') {
+    const driveSelect = document.getElementById('driveSelect');
+    const drives = company ? company.drives || [] : [];
+    driveSelect.innerHTML = '<option value="">Create a new drive</option>' + drives.map(drive =>
+      `<option value="${escapeHtml(drive._id)}">${escapeHtml(drive.name)} (${escapeHtml(drive.status)})</option>`
+    ).join('');
+
+    const drive = drives.find(item => item._id === selectedDriveId) || null;
+    driveSelect.value = drive ? drive._id : '';
+    document.getElementById('driveName').value = drive ? drive.name : '';
+    renderRoundSettings(drive || { round_sequence: [] }, 'driveRoundSettingsFields');
+    document.getElementById('publishDriveBtn').disabled = !drive || drive.status === 'published';
+    document.getElementById('unpublishDriveBtn').disabled = !drive || drive.status !== 'published';
+    document.getElementById('saveDriveBtn').textContent = drive ? 'Save drive settings' : 'Save as draft';
+    showDriveMessage('', false);
+  }
+
+  function renderRoundSettings(company, containerId = 'roundSettingsFields') {
+    const container = document.getElementById(containerId);
     if (!company) {
       container.innerHTML = '<p class="small-muted">Add a company to configure its rounds.</p>';
       return;
@@ -299,7 +444,24 @@
       return;
     }
 
-    const roundSequence = [...document.querySelectorAll('[data-round-config]')].map(section => {
+    const roundSequence = readRoundSequence('roundSettingsFields');
+
+    try {
+      const allocation = await Api.admin.validatePattern(companyId, roundSequence);
+      if (!allocation.valid) {
+        showPatternMessage(allocation.errors.join('\n'), true);
+        return;
+      }
+      await Api.admin.updatePattern(companyId, roundSequence);
+      await loadPatterns();
+      showPatternMessage('Company mock-drive settings validated and saved.', false);
+    } catch (err) {
+      showPatternMessage(err.message, true);
+    }
+  });
+
+  function readRoundSequence(containerId) {
+    return [...document.getElementById(containerId).querySelectorAll('[data-round-config]')].map(section => {
       const readNumber = selector => Number(section.querySelector(selector).value);
       const includedTopics = section.querySelector('[data-included-topics]').value
         .split(/[,;\n]/).map(topic => topic.trim()).filter(Boolean);
@@ -316,15 +478,75 @@
         },
       };
     });
+  }
 
+  document.getElementById('driveCompanySelect').addEventListener('change', async event => {
     try {
-      await Api.admin.updatePattern(companyId, roundSequence);
-      await loadPatterns();
-      showPatternMessage('Company mock-drive settings saved.', false);
+      const companies = await Api.admin.listCompanies();
+      loadDriveEditor(companies.find(company => company.id === event.target.value));
     } catch (err) {
-      showPatternMessage(err.message, true);
+      showDriveMessage(err.message, true);
     }
   });
+
+  document.getElementById('driveSelect').addEventListener('change', async event => {
+    try {
+      const companies = await Api.admin.listCompanies();
+      const company = companies.find(item => item.id === document.getElementById('driveCompanySelect').value);
+      loadDriveEditor(company, event.target.value);
+    } catch (err) {
+      showDriveMessage(err.message, true);
+    }
+  });
+
+  document.getElementById('newDriveBtn').addEventListener('click', () => {
+    loadDriveEditor({ drives: [] });
+  });
+
+  document.getElementById('saveDriveBtn').addEventListener('click', async () => {
+    const companyId = document.getElementById('driveCompanySelect').value;
+    const driveId = document.getElementById('driveSelect').value;
+    const name = document.getElementById('driveName').value.trim();
+    if (!companyId) {
+      showDriveMessage('Select a company before saving a drive.', true);
+      return;
+    }
+    const roundSequence = readRoundSequence('driveRoundSettingsFields');
+    const configurationErrors = validateRoundSettings(roundSequence);
+    if (configurationErrors.length) {
+      showDriveMessage(configurationErrors.join('\n'), true);
+      return;
+    }
+    try {
+      const saved = driveId
+        ? await Api.admin.updateDrive(driveId, { name, round_sequence: roundSequence })
+        : await Api.admin.createDrive(companyId, { name, round_sequence: roundSequence });
+      await loadPatterns();
+      document.getElementById('driveSelect').value = saved._id;
+      const companies = await Api.admin.listCompanies();
+      const company = companies.find(item => item.id === companyId);
+      loadDriveEditor(company, saved._id);
+      showDriveMessage('Drive settings saved as a draft. Publish after resolving any allocation errors.', false);
+    } catch (err) {
+      showDriveMessage(err.message, true);
+    }
+  });
+
+  async function setDriveStatus(status) {
+    const driveId = document.getElementById('driveSelect').value;
+    if (!driveId) return;
+    try {
+      await Api.admin.updateDriveStatus(driveId, status);
+      await loadPatterns();
+      document.getElementById('driveSelect').value = driveId;
+      showDriveMessage(status === 'published' ? 'Drive published and visible to students.' : 'Drive unpublished and hidden from students.', false);
+    } catch (err) {
+      showDriveMessage(err.message, true);
+    }
+  }
+
+  document.getElementById('publishDriveBtn').addEventListener('click', () => setDriveStatus('published'));
+  document.getElementById('unpublishDriveBtn').addEventListener('click', () => setDriveStatus('draft'));
 
   function onAdminTabChange(tab) {
     if (tab === 'aptitude') loadAptitude();

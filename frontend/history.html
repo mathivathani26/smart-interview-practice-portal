@@ -84,7 +84,7 @@
       drivesBody.innerHTML = drives.length ? drives.map(s => `
         <tr>
           <td>${new Date(s.completed_at).toLocaleDateString()}</td>
-          <td>${s.company || '—'}</td>
+          <td>${s.company || '—'}${s.drive_name ? ` · ${s.drive_name}` : ''}</td>
           <td>${s.round_scores.aptitude != null ? s.round_scores.aptitude + '%' : '—'}</td>
           <td>${s.round_scores.coding != null ? s.round_scores.coding + '%' : '—'}</td>
           <td>${s.round_scores.theory != null ? s.round_scores.theory + '%' : '—'}</td>

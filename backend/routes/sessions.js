@@ -4,6 +4,7 @@ const Session = require("../models/Session");
 const RoundAttempt = require("../models/RoundAttempt");
 const Company = require("../models/Company");
 const CompanyPattern = require("../models/CompanyPattern");
+const MockDrive = require("../models/MockDrive");
 const AptitudeQuestion = require("../models/AptitudeQuestion");
 const CodingQuestion = require("../models/CodingQuestion");
 const TheoryQuestion = require("../models/TheoryQuestion");
@@ -12,7 +13,8 @@ const requireAuth = require("../middleware/auth");
 const { scoreTheoryAnswer, codeSimilarity } = require("../utils/scoring");
 const { runCode, isMockMode } = require("../utils/judge0");
 const { detectApproachTags } = require("../utils/approachDetector");
-const { assignQuestions, validateRoundSequence } = require("../utils/companyPattern");
+const { assignQuestions, validateRoundSequence, validateRoundAvailability } = require("../utils/companyPattern");
+const { getCompanyQuestionIds } = require("../utils/companyQuestionAssignments");
 
 const router = express.Router();
 
@@ -52,26 +54,64 @@ async function activeRoundIndex(session) {
 // ---------------------------------------------------------------
 router.post("/start", requireAuth, async (req, res) => {
   try {
-    const { mode, companyId, category, difficulty } = req.body;
+    const { mode, companyId, driveId, category, difficulty } = req.body;
     if (!["mock_drive", "single_question"].includes(mode)) {
       return res.status(400).json({ message: "mode must be mock_drive or single_question" });
     }
 
     let company = null;
+    let mockDrive = null;
+    let driveName = null;
+    let companyQuestionIds = {};
     let roundSequence = [];
     let assignedRounds = [];
 
     if (mode === "mock_drive") {
-      if (!companyId) return res.status(400).json({ message: "companyId is required for a mock drive" });
-      company = await Company.findById(companyId);
-      if (!company) return res.status(404).json({ message: "Company not found" });
-      const pattern = await CompanyPattern.findOne({ company: company._id });
-      if (!pattern || pattern.round_sequence.length === 0) {
-        return res.status(409).json({ message: "This company has no saved mock-drive settings. Ask an admin to configure its rounds before starting." });
+      let sourceSequence;
+      if (driveId) {
+        mockDrive = await MockDrive.findOne({ _id: driveId, status: "published" }).populate("company", "name");
+        if (mockDrive) {
+          company = mockDrive.company;
+          driveName = mockDrive.name;
+          sourceSequence = mockDrive.round_sequence;
+          companyQuestionIds = await getCompanyQuestionIds(company._id);
+          const allocationErrors = await validateRoundAvailability(
+            sourceSequence.map((round) => round.toObject()),
+            BANK_BY_TYPE,
+            company.name,
+            companyQuestionIds
+          );
+          if (allocationErrors.length) {
+            return res.status(409).json({ message: allocationErrors.join("\n"), errors: allocationErrors });
+          }
+        } else {
+          const pattern = await CompanyPattern.findById(driveId);
+          if (!pattern) return res.status(404).json({ message: "Published mock drive not found" });
+          company = await Company.findById(pattern.company);
+          const publishedDriveCount = await MockDrive.countDocuments({ company: pattern.company, status: "published" });
+          if (!company || publishedDriveCount > 0) {
+            return res.status(404).json({ message: "Published mock drive not found" });
+          }
+          sourceSequence = pattern.round_sequence;
+          driveName = "Existing Mock Drive";
+          companyQuestionIds = await getCompanyQuestionIds(company._id);
+        }
+      } else {
+        if (!companyId) return res.status(400).json({ message: "driveId is required for a published mock drive" });
+        company = await Company.findById(companyId);
+        if (!company) return res.status(404).json({ message: "Company not found" });
+        const pattern = await CompanyPattern.findOne({ company: company._id });
+        if (!pattern || pattern.round_sequence.length === 0) {
+          return res.status(409).json({ message: "This company has no saved mock-drive settings. Ask an admin to configure its rounds before starting." });
+        }
+        sourceSequence = pattern.round_sequence;
+        driveName = "Existing Mock Drive";
+        companyQuestionIds = await getCompanyQuestionIds(company._id);
       }
-      const validationError = validateRoundSequence(pattern.round_sequence.map((round) => round.toObject()));
+
+      const validationError = validateRoundSequence(sourceSequence.map((round) => round.toObject()));
       if (validationError) return res.status(409).json({ message: `Invalid mock-drive settings for ${company.name}: ${validationError}` });
-      roundSequence = pattern.round_sequence
+      roundSequence = sourceSequence
         .filter((round) => round.enabled !== false)
         .map((round) => ({
           round_type: round.round_type,
@@ -85,7 +125,12 @@ router.post("/start", requireAuth, async (req, res) => {
 
       try {
         for (const round of roundSequence) {
-          const questionIds = await assignQuestions(BANK_BY_TYPE[round.round_type], round, company.name);
+          const questionIds = await assignQuestions(
+            BANK_BY_TYPE[round.round_type],
+            round,
+            company.name,
+            companyQuestionIds[round.round_type]
+          );
           assignedRounds.push({ ...round, question_ids: questionIds });
         }
       } catch (err) {
@@ -99,6 +144,8 @@ router.post("/start", requireAuth, async (req, res) => {
     const session = await Session.create({
       user: req.userId,
       company: company ? company._id : null,
+      mock_drive: mockDrive ? mockDrive._id : null,
+      drive_name: driveName,
       mode,
       drive_rounds: assignedRounds,
     });
@@ -107,6 +154,7 @@ router.post("/start", requireAuth, async (req, res) => {
       sessionId: session._id,
       mode,
       company: company ? { id: company._id, name: company.name } : null,
+      drive: mockDrive ? { id: mockDrive._id, name: mockDrive.name } : (company ? { id: null, name: driveName, legacy: true } : null),
       round_sequence: roundSequence.map(({ included_topics, difficulty_distribution, ...round }) => round),
     });
   } catch (err) {
@@ -278,6 +326,10 @@ async function submitRoundHandler(req, res) {
           tfidf_score: existingAttempt.tfidf_score,
           matched_concepts: existingAttempt.matched_concepts,
           missing_concepts: existingAttempt.missing_concepts,
+          theory_max_marks: existingAttempt.theory_max_marks,
+          theory_marks_awarded: existingAttempt.theory_marks_awarded,
+          theory_status: existingAttempt.theory_status,
+          theory_feedback: existingAttempt.theory_feedback,
           test_cases_passed: existingAttempt.test_cases_passed,
           test_cases_total: existingAttempt.test_cases_total,
           test_results: existingAttempt.test_results,
@@ -320,7 +372,12 @@ async function submitRoundHandler(req, res) {
       }
       const q = await TheoryQuestion.findById(question_id);
       if (!q) return res.status(404).json({ message: "Question not found" });
-      const scored = scoreTheoryAnswer(response.answer_text, q.ideal_concepts);
+      const scored = scoreTheoryAnswer(response.answer_text, q.ideal_concepts, {
+        questionText: q.question_text,
+        referenceAnswer: q.reference_answer,
+        markingRubric: q.marking_rubric,
+        maxMarks: q.max_marks,
+      });
       roundResult = {
         round_score: scored.score,
         category: q.subject,
@@ -330,6 +387,10 @@ async function submitRoundHandler(req, res) {
         tfidf_score: scored.tfidfScore,
         matched_concepts: scored.matchedConcepts,
         missing_concepts: scored.missingConcepts,
+        theory_max_marks: scored.maxMarks,
+        theory_marks_awarded: scored.marksAwarded,
+        theory_status: scored.status,
+        theory_feedback: scored.feedback,
       };
     } else if (round_type === "coding") {
       if (typeof response.code !== "string" || typeof response.language !== "string") {
@@ -370,6 +431,10 @@ async function submitRoundHandler(req, res) {
       tfidf_score: roundResult.tfidf_score ?? null,
       matched_concepts: roundResult.matched_concepts || [],
       missing_concepts: roundResult.missing_concepts || [],
+      theory_max_marks: roundResult.theory_max_marks ?? null,
+      theory_marks_awarded: roundResult.theory_marks_awarded ?? null,
+      theory_status: roundResult.theory_status ?? null,
+      theory_feedback: roundResult.theory_feedback || "",
       test_cases_passed: roundResult.test_cases_passed ?? null,
       test_cases_total: roundResult.test_cases_total ?? null,
       test_results: roundResult.test_results ?? null,
@@ -470,6 +535,7 @@ router.get("/", requireAuth, async (req, res) => {
           id: s._id,
           mode: s.mode,
           company: s.company ? s.company.name : null,
+          drive_name: s.drive_name,
           total_score: s.total_score,
           completed_at: s.completed_at,
           round_scores: byType,
@@ -522,7 +588,7 @@ router.get("/stats/dashboard", requireAuth, async (req, res) => {
     const recent = await Promise.all(
       recentSessions.map(async (s) => {
         await s.populate("company", "name");
-        return { date: s.completed_at, mode: s.mode, company: s.company ? s.company.name : "Single Practice", total_score: s.total_score };
+        return { date: s.completed_at, mode: s.mode, company: s.company ? s.company.name : "Single Practice", drive_name: s.drive_name, total_score: s.total_score };
       })
     );
 

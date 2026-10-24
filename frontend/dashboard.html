@@ -152,7 +152,7 @@
         recentBody.innerHTML = stats.recent.map(r => `
           <tr>
             <td>${new Date(r.date).toLocaleDateString()}</td>
-            <td>${r.company}</td>
+            <td>${r.company}${r.drive_name ? ` · ${r.drive_name}` : ''}</td>
             <td class="score">${r.total_score}%</td>
           </tr>`).join('');
       }

@@ -7,6 +7,7 @@ const aptitudeQuestionSchema = new mongoose.Schema(
     options: [{ type: String, required: true }],
     correct_option: { type: String, default: null },
     correct_options: [{ type: String }],
+    explanation: { type: String, default: "" },
     difficulty: { type: String, enum: ["Easy", "Medium", "Hard"], required: true },
   },
   { timestamps: true }

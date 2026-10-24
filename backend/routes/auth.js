@@ -2,11 +2,16 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const requireAuth = require("../middleware/auth");
 
 const router = express.Router();
 
 function issueToken(user) {
-  return jwt.sign({ userId: user._id, role: user.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
+  return jwt.sign({
+    userId: user._id,
+    role: user.role,
+    tokenVersion: user.tokenVersion || 0,
+  }, process.env.JWT_SECRET, { expiresIn: "7d" });
 }
 function publicUser(user) {
   return { id: user._id, firstName: user.firstName, lastName: user.lastName, email: user.email, role: user.role };
@@ -49,6 +54,17 @@ router.post("/login", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error during login" });
+  }
+});
+
+router.post("/logout", requireAuth, async (req, res) => {
+  try {
+    const user = await User.findByIdAndUpdate(req.userId, { $inc: { tokenVersion: 1 } });
+    if (!user) return res.status(401).json({ message: "Account not found" });
+    res.json({ message: "Logged out successfully" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error during logout" });
   }
 });
 
