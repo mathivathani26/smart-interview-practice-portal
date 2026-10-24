@@ -29,6 +29,9 @@ const roundAttemptSchema = new mongoose.Schema(
     test_cases_passed: { type: Number, default: null },
     test_cases_total: { type: Number, default: null },
     test_results: { type: mongoose.Schema.Types.Mixed, default: null }, // per-test verdict, time, memory
+    coding_max_marks: { type: Number, default: null },
+    coding_marks_awarded: { type: Number, default: null },
+    coding_feedback: { type: String, default: "" },
     matched_approach_tags: [{ type: String }], // e.g. "hash map" — techniques detected in the submitted code
     missing_approach_tags: [{ type: String }], // technique tags on the question that weren't detected
   },

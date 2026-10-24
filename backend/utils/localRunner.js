@@ -161,7 +161,9 @@ function buildResult(tc, execResult) {
   return {
     input: tc.hidden ? "(hidden)" : tc.input,
     expected_output: tc.hidden ? "(hidden)" : tc.expected_output,
-    actual_output: execResult.stderr ? `Error: ${execResult.stderr.split("\n")[0]}` : actual,
+    actual_output: tc.hidden
+      ? "(hidden)"
+      : execResult.stderr ? `Error: ${execResult.stderr.split("\n")[0]}` : actual,
     passed,
     verdict,
     time_ms: execResult.time_ms ?? null,

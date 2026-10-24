@@ -298,12 +298,18 @@ router.get("/:id/aptitude-set", requireAuth, async (req, res) => {
 //   theory response:   { answer_text }
 // ---------------------------------------------------------------
 async function submitRoundHandler(req, res) {
+  let stage = "validate request";
   try {
-    const { round_type, question_id, response, time_taken, tab_switch_count, paste_count } = req.body;
-    if (typeof round_type !== "string" || typeof question_id !== "string"
+    const { round_type, question_id, response, time_taken, tab_switch_count, paste_count } = req.body || {};
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: "A valid session ID is required." });
+    }
+    if (!["aptitude", "coding", "theory"].includes(round_type)
+      || typeof question_id !== "string" || !mongoose.isValidObjectId(question_id)
       || !response || typeof response !== "object" || Array.isArray(response)) {
       return res.status(400).json({ message: "A valid round, question, and response are required." });
     }
+    stage = "load session";
     const session = await Session.findOne({ _id: req.params.id, user: req.userId });
     if (!session) return res.status(404).json({ message: "Session not found" });
     if (session.completed_at) {
@@ -333,6 +339,9 @@ async function submitRoundHandler(req, res) {
           test_cases_passed: existingAttempt.test_cases_passed,
           test_cases_total: existingAttempt.test_cases_total,
           test_results: existingAttempt.test_results,
+          coding_max_marks: existingAttempt.coding_max_marks ?? 100,
+          coding_marks_awarded: existingAttempt.coding_marks_awarded ?? existingAttempt.round_score,
+          coding_feedback: existingAttempt.coding_feedback || `${existingAttempt.test_cases_passed || 0} of ${existingAttempt.test_cases_total || 0} test cases passed.`,
           matched_approach_tags: existingAttempt.matched_approach_tags,
           missing_approach_tags: existingAttempt.missing_approach_tags,
           mockJudge: round_type === "coding" ? isMockMode(response.language) : undefined,
@@ -348,6 +357,7 @@ async function submitRoundHandler(req, res) {
     let roundResult;
 
     if (round_type === "aptitude") {
+      stage = "load aptitude question";
       const q = await AptitudeQuestion.findById(question_id);
       if (!q) return res.status(404).json({ message: "Question not found" });
 
@@ -370,6 +380,7 @@ async function submitRoundHandler(req, res) {
       if (typeof response.answer_text !== "string") {
         return res.status(400).json({ message: "A theory answer is required." });
       }
+      stage = "load theory question";
       const q = await TheoryQuestion.findById(question_id);
       if (!q) return res.status(404).json({ message: "Question not found" });
       const scored = scoreTheoryAnswer(response.answer_text, q.ideal_concepts, {
@@ -393,22 +404,44 @@ async function submitRoundHandler(req, res) {
         theory_feedback: scored.feedback,
       };
     } else if (round_type === "coding") {
-      if (typeof response.code !== "string" || typeof response.language !== "string") {
+      if (typeof response.code !== "string" || !response.code.trim()
+        || typeof response.language !== "string" || !response.language.trim()) {
         return res.status(400).json({ message: "Code and programming language are required." });
       }
+      stage = "load coding question";
       const q = await CodingQuestion.findById(question_id);
       if (!q) return res.status(404).json({ message: "Question not found" });
+      stage = "execute coding test cases";
       const results = await runCode(response.code, response.language, q.test_cases);
+      if (!Array.isArray(results) || results.length !== q.test_cases.length
+        || results.some((result) => !result || typeof result.passed !== "boolean" || !result.verdict || result.verdict === "Judge Error")) {
+        const error = new Error("The code execution service returned incomplete test results.");
+        error.code = "INVALID_EXECUTION_RESULTS";
+        error.statusCode = 502;
+        throw error;
+      }
       const passed = results.filter((r) => r.passed).length;
       const approach = detectApproachTags(response.code, q.tags);
+      const roundScore = Math.round((passed / results.length) * 100);
+      const compilationFailed = results.some((result) => result.verdict === "Compilation Error");
+      const executionFailed = results.some((result) => ["Runtime Error", "Time Limit Exceeded", "Memory Limit Exceeded"].includes(result.verdict));
+      let codingFeedback = `${passed} of ${results.length} test cases passed.`;
+      if (compilationFailed) {
+        codingFeedback = "Compilation failed. Review the compiler error in the test-case details.";
+      } else if (executionFailed) {
+        codingFeedback = "One or more test cases failed during execution. Review their verdicts and output.";
+      }
       roundResult = {
-        round_score: Math.round((passed / results.length) * 100),
+        round_score: roundScore,
         category: q.tags[0] || "coding",
         difficulty: q.difficulty,
         response: { language: response.language },
         test_cases_passed: passed,
         test_cases_total: results.length,
         test_results: results,
+        coding_max_marks: 100,
+        coding_marks_awarded: roundScore,
+        coding_feedback: codingFeedback,
         matched_approach_tags: approach.matched,
         missing_approach_tags: approach.missing,
       };
@@ -416,42 +449,18 @@ async function submitRoundHandler(req, res) {
       return res.status(400).json({ message: "Invalid round_type" });
     }
 
-    const attempt = await RoundAttempt.create({
-      session: session._id,
-      round_type,
-      question_id,
-      category: roundResult.category,
-      difficulty: roundResult.difficulty,
-      response: roundResult.response,
-      round_score: roundResult.round_score,
-      time_taken: time_taken || 0,
-      tab_switch_count: tab_switch_count || 0,
-      paste_count: paste_count || 0,
-      jaccard_score: roundResult.jaccard_score ?? null,
-      tfidf_score: roundResult.tfidf_score ?? null,
-      matched_concepts: roundResult.matched_concepts || [],
-      missing_concepts: roundResult.missing_concepts || [],
-      theory_max_marks: roundResult.theory_max_marks ?? null,
-      theory_marks_awarded: roundResult.theory_marks_awarded ?? null,
-      theory_status: roundResult.theory_status ?? null,
-      theory_feedback: roundResult.theory_feedback || "",
-      test_cases_passed: roundResult.test_cases_passed ?? null,
-      test_cases_total: roundResult.test_cases_total ?? null,
-      test_results: roundResult.test_results ?? null,
-      matched_approach_tags: roundResult.matched_approach_tags || [],
-      missing_approach_tags: roundResult.missing_approach_tags || [],
-    });
-
-    // coding round: store the submission + similarity check vs other submissions for same question
+    const attemptId = round_type === "coding" ? new mongoose.Types.ObjectId() : undefined;
     if (round_type === "coding") {
+      stage = "check prior code submissions";
       const priorSubmissions = await CodeSubmission.find({ question_id }).limit(50);
       let maxSimilarity = 0;
-      priorSubmissions.forEach((s) => {
-        const sim = codeSimilarity(response.code, s.code);
-        if (sim > maxSimilarity) maxSimilarity = sim;
+      priorSubmissions.forEach((submission) => {
+        const similarity = codeSimilarity(response.code, submission.code);
+        if (similarity > maxSimilarity) maxSimilarity = similarity;
       });
+      stage = "save code submission";
       await CodeSubmission.create({
-        round_attempt: attempt._id,
+        round_attempt: attemptId,
         question_id,
         code: response.code,
         language: response.language,
@@ -459,10 +468,79 @@ async function submitRoundHandler(req, res) {
       });
     }
 
+    let attempt;
+    try {
+      stage = "save round attempt";
+      attempt = await RoundAttempt.create({
+        _id: attemptId,
+        session: session._id,
+        round_type,
+        question_id,
+        category: roundResult.category,
+        difficulty: roundResult.difficulty,
+        response: roundResult.response,
+        round_score: roundResult.round_score,
+        time_taken: time_taken || 0,
+        tab_switch_count: tab_switch_count || 0,
+        paste_count: paste_count || 0,
+        jaccard_score: roundResult.jaccard_score ?? null,
+        tfidf_score: roundResult.tfidf_score ?? null,
+        matched_concepts: roundResult.matched_concepts || [],
+        missing_concepts: roundResult.missing_concepts || [],
+        theory_max_marks: roundResult.theory_max_marks ?? null,
+        theory_marks_awarded: roundResult.theory_marks_awarded ?? null,
+        theory_status: roundResult.theory_status ?? null,
+        theory_feedback: roundResult.theory_feedback || "",
+        test_cases_passed: roundResult.test_cases_passed ?? null,
+        test_cases_total: roundResult.test_cases_total ?? null,
+        test_results: roundResult.test_results ?? null,
+        coding_max_marks: roundResult.coding_max_marks ?? null,
+        coding_marks_awarded: roundResult.coding_marks_awarded ?? null,
+        coding_feedback: roundResult.coding_feedback || "",
+        matched_approach_tags: roundResult.matched_approach_tags || [],
+        missing_approach_tags: roundResult.missing_approach_tags || [],
+      });
+    } catch (err) {
+      if (attemptId) {
+        try {
+          await CodeSubmission.deleteOne({ round_attempt: attemptId });
+        } catch (cleanupError) {
+          console.error("Unable to remove an unpaired coding submission", {
+            roundAttemptId: String(attemptId),
+            errorName: cleanupError.name,
+            errorCode: cleanupError.code,
+            message: String(cleanupError.message || "Unknown cleanup error")
+              .replace(process.env.RAPIDAPI_KEY || "\u0000", "[redacted]")
+              .replace(/mongodb(?:\+srv)?:\/\/\S+/gi, "[redacted MongoDB URI]"),
+          });
+        }
+      }
+      throw err;
+    }
+
     res.status(201).json({ roundAttemptId: attempt._id, ...roundResult, mockJudge: round_type === "coding" ? isMockMode(response.language) : undefined });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error scoring round" });
+    const message = String(err.message || "Unknown scoring error")
+      .replace(process.env.RAPIDAPI_KEY || "\u0000", "[redacted]")
+      .replace(/mongodb(?:\+srv)?:\/\/\S+/gi, "[redacted MongoDB URI]");
+    console.error("Round scoring failed", {
+      sessionId: req.params.id,
+      userId: req.userId ? String(req.userId) : null,
+      roundType: req.body && req.body.round_type,
+      stage,
+      errorName: err.name,
+      errorCode: err.code,
+      message,
+    });
+    const statusCode = Number.isInteger(err.statusCode) ? err.statusCode : 500;
+    const publicMessage = err.code === "CODE_EXECUTION_NOT_CONFIGURED"
+      ? "Coding is unavailable because production code execution is not configured. Contact the administrator."
+      : err.code === "CODE_EXECUTION_FAILED" || err.code === "INVALID_EXECUTION_RESULTS"
+        ? "The code execution service failed. Your answer was not scored; please try again."
+        : statusCode === 500
+          ? "Unable to score this round right now. Please try again."
+          : err.message;
+    res.status(statusCode).json({ message: publicMessage, code: err.code || "ROUND_SCORING_FAILED" });
   }
 }
 
@@ -600,3 +678,4 @@ router.get("/stats/dashboard", requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.submitRoundHandler = submitRoundHandler;

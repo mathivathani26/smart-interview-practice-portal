@@ -1,8 +1,8 @@
-/* Smart Interview Practice Portal — real API client.
-   Talks to the Express backend in /backend. Change API_BASE if you deploy
-   the backend somewhere other than localhost:5000. */
+/* Smart Interview Practice Portal — real API client. */
 
-const API_BASE = "https://smart-interview-practice-portal.onrender.com/api";
+const API_BASE = ["localhost", "127.0.0.1"].includes(window.location.hostname)
+  ? "http://localhost:5000/api"
+  : "https://smart-interview-practice-portal.onrender.com/api";
 
 const Auth = {
   getToken() { return localStorage.getItem("sip_token"); },
@@ -70,7 +70,11 @@ async function apiRequest(path, { method = "GET", body, auth = true } = {}) {
 
   if (!res.ok) {
     const message = (data && data.message) || `Request failed (${res.status})`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    error.code = data && data.code;
+    error.data = data;
+    throw error;
   }
   return data;
 }

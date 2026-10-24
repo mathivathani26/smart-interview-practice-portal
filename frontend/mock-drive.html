@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mock Drive — Smart Interview Practice Portal</title>
-<link rel="stylesheet" href="css/style.css?v=2">
+<link rel="stylesheet" href="css/style.css?v=3">
 </head>
-<body>
+<body class="mock-drive-page">
 <div class="app-shell">
 
   <aside class="app-sidebar">
@@ -44,7 +44,7 @@
     <button class="side-logout" data-logout>Log out</button>
   </aside>
 
-  <main class="app-main">
+  <main class="app-main mock-drive-main">
     <div class="app-topbar">
       <div>
         <h1>Start a Mock Drive</h1>
@@ -97,7 +97,7 @@
               return `<div class="pi ${type} ${spec ? '' : 'off'}"><div class="pi-circle">${ICONS[type]}</div><span class="pi-count">${spec ? spec.question_count : '—'}</span></div>`;
             }).join('');
             return `<button type="button" class="drive-choice" data-drive-id="${escapeHtml(drive.id)}">
-              <strong>${escapeHtml(drive.name)}</strong>
+              <span class="drive-choice-title">${escapeHtml(drive.name)}</span>
               <span class="pattern-icons">${rounds}</span>
             </button>`;
           }).join('')}</div>

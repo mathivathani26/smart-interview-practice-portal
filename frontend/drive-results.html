@@ -6,7 +6,7 @@
 <title>Mock Drive Result — Smart Interview Practice Portal</title>
 <link rel="stylesheet" href="css/style.css">
 </head>
-<body>
+<body class="drive-results-page">
 <div class="app-shell">
 
   <aside class="app-sidebar">
@@ -108,6 +108,11 @@
   const sessionId = params.get('session');
   const ICONS = { aptitude: '🧮', coding: '{ }', theory: '✎' };
   const LABELS = { aptitude: 'Aptitude Round', coding: 'Coding Round', theory: 'Theory Round' };
+  function escapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, char => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[char]);
+  }
 
   (async function load() {
     if (document.readyState === 'loading') {
@@ -156,7 +161,8 @@
         let meta = '';
         if (a.round_type === 'aptitude') meta = `${a.category} · ${a.round_score === 100 ? 'Correct' : 'Incorrect'} · ${a.time_taken}s`;
         if (a.round_type === 'coding') {
-          meta = `${a.test_cases_passed}/${a.test_cases_total} test cases passed · ${a.time_taken}s`;
+          const marks = a.coding_max_marks == null ? '' : ` · ${a.coding_marks_awarded ?? a.round_score}/${a.coding_max_marks} marks`;
+          meta = `${a.test_cases_passed}/${a.test_cases_total} test cases passed${marks} · ${a.time_taken}s`;
           if (a.paste_count > 0) meta += ` · ${a.paste_count} paste${a.paste_count === 1 ? '' : 's'} detected`;
         }
         if (a.round_type === 'theory') {
@@ -178,10 +184,27 @@
           approachRow = `<div class="concept-list" style="margin-top:8px;">${chips}</div>`;
         }
 
+        let codingDetails = '';
+        if (a.round_type === 'coding') {
+          const feedback = a.coding_feedback || `${a.test_cases_passed || 0} of ${a.test_cases_total || 0} test cases passed.`;
+          const cases = Array.isArray(a.test_results) ? a.test_results.map((result, index) => {
+            const hidden = result.hidden === true;
+            const safeValue = value => escapeHtml(hidden ? '(hidden)' : (value || '—'));
+            return `<div class="testcase">
+              <div class="tc-head"><span>Test case ${index + 1}</span><span class="tc-status ${result.passed ? 'pass' : 'fail'}">${escapeHtml(result.verdict || (result.passed ? 'Passed' : 'Failed'))}</span></div>
+              <div class="tc-row">Input: ${safeValue(result.input)}</div>
+              <div class="tc-row">Expected: ${safeValue(result.expected_output)}</div>
+              <div class="tc-row">Actual: ${safeValue(result.actual_output)}</div>
+            </div>`;
+          }).join('') : '';
+          codingDetails = `<p class="coding-feedback">${escapeHtml(feedback)}</p>
+            ${cases ? `<details class="coding-result-details"><summary>View test-case results</summary><div class="testcase-list">${cases}</div></details>` : ''}`;
+        }
+
         return `
           <div class="round-result-card">
             <div class="rr-icon ${a.round_type}">${ICONS[a.round_type]}</div>
-            <div><h4>${LABELS[a.round_type]}${roundSpec ? ` · Question ${questionNumber} of ${roundSpec.question_count}` : ''}</h4><div class="rr-meta">${meta}</div>${approachRow}</div>
+            <div><h4>${LABELS[a.round_type]}${roundSpec ? ` · Question ${questionNumber} of ${roundSpec.question_count}` : ''}</h4><div class="rr-meta">${escapeHtml(meta)}</div>${codingDetails}${approachRow}</div>
             <div class="rr-score">${a.round_score}%</div>
           </div>`;
       }).join('') : '<p style="color:var(--ink-faint);">There were no answered questions to score.</p>';

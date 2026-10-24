@@ -311,6 +311,11 @@ textarea.answer:focus{ outline:none; border-color: var(--red-mark); box-shadow: 
 .round-result-card h4{ margin:0 0 4px; font-family: var(--font-body); font-weight:700; font-size:1rem; }
 .round-result-card .rr-meta{ font-size:.82rem; color: var(--ink-faint); }
 .round-result-card .rr-score{ font-family: var(--font-mono); font-size:1.5rem; font-weight:700; color: var(--ink); text-align:right; }
+.coding-feedback{ margin:8px 0 0; color:var(--ink-soft); }
+.coding-result-details{ margin-top:10px; }
+.coding-result-details summary{ color:var(--blue-code); cursor:pointer; font-weight:600; }
+.coding-result-details .testcase{ overflow-wrap:anywhere; white-space:pre-wrap; }
+.round-result-card > div:nth-child(2){ min-width:0; }
 
 /* ---- leaderboard ---- */
 .leaderboard-row{ display:grid; grid-template-columns: 50px 1fr auto; align-items:center; gap: 16px; padding: 14px 16px; border-radius: var(--radius-s); }
@@ -509,9 +514,13 @@ textarea.answer{ min-height: 230px; line-height: 1.6; }
 .company-card{ padding: 24px; }
 .company-card h4{ font-size: 1.125rem; }
 .drive-choice-list{ display:grid; gap:10px; margin-top:18px; }
-.drive-choice{ display:flex; width:100%; align-items:center; justify-content:space-between; gap:16px; padding:12px 14px; border:1px solid var(--rule); border-radius:var(--radius-s); background:#fffef8; color:var(--ink); text-align:left; cursor:pointer; }
+.drive-choice{ display:flex; width:100%; min-width:0; flex-direction:column; align-items:stretch; gap:8px; padding:12px 14px; border:1px solid var(--rule); border-radius:var(--radius-s); background:#fffef8; color:var(--ink); text-align:left; cursor:pointer; }
 .drive-choice:hover,.drive-choice.selected{ border-color:var(--red-mark); background:#fff9f5; }
-.drive-choice .pattern-icons{ display:flex; gap:8px; }
+.drive-choice-title{ min-width:0; font-size:.95rem; font-weight:700; line-height:1.35; overflow-wrap:normal; word-break:normal; }
+.drive-choice .pattern-icons{ display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; width:100%; margin:0; padding:8px 0 0; }
+.drive-choice .pattern-icons .pi{ min-width:0; flex-direction:row; justify-content:center; gap:6px; }
+.drive-choice .pattern-icons .pi .pi-circle{ flex:0 0 28px; width:28px; height:28px; font-size:.9rem; }
+.drive-choice .pattern-icons .pi .pi-count{ font-family:var(--font-mono); font-size:.8rem; line-height:1; }
 
 .company-settings{ margin-top: 34px; padding-top: 28px; border-top: 1px solid var(--rule); }
 .company-card.needs-setup{ border-style:dashed; }
@@ -738,4 +747,39 @@ select{ touch-action:manipulation; }
   .mcq-card,
   .q-card{ padding:22px; }
   .company-grid{ grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr)); }
+}
+
+/* The mock-drive chooser keeps the drive title readable above its round summary. */
+.mock-drive-main .company-grid{
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  align-items:stretch;
+}
+.mock-drive-main .company-card{
+  display:flex;
+  min-width:0;
+  flex-direction:column;
+  padding:20px;
+  overflow-wrap:normal;
+  word-break:normal;
+}
+.mock-drive-main .company-card h4,
+.mock-drive-main .company-card .company-sub{
+  overflow-wrap:anywhere;
+}
+.mock-drive-main .drive-choice-list{ margin-top:auto; padding-top:16px; }
+.mock-drive-main .drive-choice-title{ white-space:normal; }
+.mock-drive-main #startDriveBtn{ min-height:48px; }
+@media (max-width:1200px){
+  .mock-drive-main .company-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:900px){
+  .mock-drive-page .app-shell{ grid-template-columns:minmax(0,1fr); }
+  .mock-drive-page .app-sidebar{ width:100%; min-width:0; }
+  .drive-results-page .app-shell{ grid-template-columns:minmax(0,1fr); }
+  .drive-results-page .app-sidebar{ width:100%; min-width:0; }
+}
+@media (max-width:720px){
+  .mock-drive-main .company-grid{ grid-template-columns:minmax(0,1fr); }
+  .mock-drive-main .company-card{ padding:18px; }
+  .mock-drive-main .drive-choice{ padding:12px; }
 }

@@ -1,15 +1,11 @@
 /**
  * Coding-round code runner.
  *
- * If RAPIDAPI_KEY is set in .env, this calls the real Judge0 CE API
+ * If RAPIDAPI_KEY is set in the environment, this calls the real Judge0 CE API
  * (via RapidAPI) to compile and run submitted code against each test case's
  * stdin and compares stdout to expected_output.
  *
- * If RAPIDAPI_KEY is NOT set, it runs in MOCK mode: no real execution
- * happens, and each test case is marked pass/fail with a weighted random
- * outcome (biased toward passing so the demo feels reasonable). This lets
- * the whole app run and be demoed with zero external signup required —
- * add a real key later for genuine code execution.
+ * Without a key, local execution and simulation are development-only.
  */
 
 const axios = require("axios");
@@ -27,11 +23,26 @@ const LANGUAGE_IDS = {
 
 const JUDGE0_HOST = "judge0-ce.p.rapidapi.com";
 
+function executionError(code, message, statusCode) {
+  const error = new Error(message);
+  error.code = code;
+  error.statusCode = statusCode;
+  return error;
+}
+
+function redactSensitiveText(value) {
+  let text = String(value || "Unknown execution error");
+  if (process.env.RAPIDAPI_KEY) {
+    text = text.split(process.env.RAPIDAPI_KEY).join("[redacted]");
+  }
+  return text.replace(/mongodb(?:\+srv)?:\/\/\S+/gi, "[redacted MongoDB URI]");
+}
+
 async function runAgainstJudge0(code, language, testCases) {
-  const languageId = LANGUAGE_IDS[(language || "").toLowerCase()] || 71;
+  const languageId = LANGUAGE_IDS[language.toLowerCase()];
   const results = [];
 
-  for (const tc of testCases) {
+  for (const [index, tc] of testCases.entries()) {
     try {
       const submitRes = await axios.post(
         `https://${JUDGE0_HOST}/submissions?base64_encoded=false&wait=true`,
@@ -52,15 +63,29 @@ async function runAgainstJudge0(code, language, testCases) {
 
       const actual = (submitRes.data.stdout || "").trim();
       const expected = (tc.expected_output || "").trim();
-      const passed = actual === expected;
       // Judge0's own status description: "Accepted", "Wrong Answer",
       // "Time Limit Exceeded", "Runtime Error", "Compilation Error", etc.
-      const verdict = submitRes.data.status ? submitRes.data.status.description : (passed ? "Accepted" : "Wrong Answer");
+      const judgeVerdict = submitRes.data.status
+        ? submitRes.data.status.description
+        : (actual === expected ? "Accepted" : "Wrong Answer");
+      if (["In Queue", "Processing", "Internal Error"].includes(judgeVerdict)) {
+        throw executionError(
+          "CODE_EXECUTION_FAILED",
+          `Judge0 returned an incomplete result: ${judgeVerdict}.`,
+          502
+        );
+      }
+      const verdict = judgeVerdict === "Accepted" && actual !== expected
+        ? "Wrong Answer"
+        : judgeVerdict;
+      const passed = verdict === "Accepted" && actual === expected;
 
       results.push({
         input: tc.hidden ? "(hidden)" : tc.input,
         expected_output: tc.hidden ? "(hidden)" : tc.expected_output,
-        actual_output: submitRes.data.stderr ? `Error: ${submitRes.data.stderr}` : actual,
+        actual_output: tc.hidden
+          ? "(hidden)"
+          : submitRes.data.stderr ? `Error: ${submitRes.data.stderr}` : actual,
         passed,
         verdict,
         time_ms: submitRes.data.time ? Math.round(parseFloat(submitRes.data.time) * 1000) : null,
@@ -68,16 +93,18 @@ async function runAgainstJudge0(code, language, testCases) {
         hidden: tc.hidden,
       });
     } catch (err) {
-      results.push({
-        input: tc.hidden ? "(hidden)" : tc.input,
-        expected_output: tc.hidden ? "(hidden)" : tc.expected_output,
-        actual_output: "Execution error: " + err.message,
-        passed: false,
-        verdict: "Judge Error",
-        time_ms: null,
-        memory_kb: null,
-        hidden: tc.hidden,
+      console.error("Judge0 execution request failed", {
+        testCase: index + 1,
+        errorName: err.name,
+        errorCode: err.code,
+        statusCode: err.response && err.response.status,
+        message: redactSensitiveText(err.message),
       });
+      throw executionError(
+        "CODE_EXECUTION_FAILED",
+        "The code execution service failed. Please try again.",
+        502
+      );
     }
   }
   return results;
@@ -105,6 +132,14 @@ function runMock(code, language, testCases) {
 }
 
 async function runCode(code, language, testCases) {
+  const normalizedLanguage = typeof language === "string" ? language.trim().toLowerCase() : "";
+  if (!Object.prototype.hasOwnProperty.call(LANGUAGE_IDS, normalizedLanguage)) {
+    throw executionError("INVALID_LANGUAGE", "Select a supported programming language.", 400);
+  }
+  if (!Array.isArray(testCases) || testCases.length === 0) {
+    throw executionError("NO_TEST_CASES", "This coding question has no test cases available for scoring.", 422);
+  }
+
   // Guard against empty/whitespace-only submissions — neither the mock judge
   // nor a real judge should ever mark these as passing.
   if (!code || !code.trim()) {
@@ -121,30 +156,33 @@ async function runCode(code, language, testCases) {
   }
 
   if (process.env.RAPIDAPI_KEY) {
-    return runAgainstJudge0(code, language, testCases);
+    return runAgainstJudge0(code, normalizedLanguage, testCases);
   }
 
   if (process.env.NODE_ENV === "production") {
-    const error = new Error("Judge0 must be configured for production code execution.");
-    error.code = "CODE_EXECUTION_NOT_CONFIGURED";
-    throw error;
+    throw executionError(
+      "CODE_EXECUTION_NOT_CONFIGURED",
+      "Judge0 must be configured for production code execution.",
+      503
+    );
   }
 
   // No Judge0 key — try REAL local execution (Python via a local interpreter,
   // JavaScript via this same Node.js binary) before ever falling back to
   // the simulated mock. This is intended only for local development.
-  if (isLocallySupported(language)) {
-    return runLocal(code, language, testCases);
+  if (isLocallySupported(normalizedLanguage)) {
+    return runLocal(code, normalizedLanguage, testCases);
   }
 
   // Only reached for languages we can't execute locally (e.g. C++/Java
   // without a compiler present) and no Judge0 key configured — this is
   // simulated, not real, and clearly labeled as such via isMockMode().
-  return runMock(code, language, testCases);
+  return runMock(code, normalizedLanguage, testCases);
 }
 
 function usedRealExecution(language) {
-  return !!process.env.RAPIDAPI_KEY || isLocallySupported(language);
+  const normalizedLanguage = typeof language === "string" ? language.trim().toLowerCase() : "";
+  return !!process.env.RAPIDAPI_KEY || isLocallySupported(normalizedLanguage);
 }
 
 module.exports = {

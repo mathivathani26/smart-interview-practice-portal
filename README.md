@@ -41,17 +41,22 @@ You should see `MongoDB connected` and `Server running on http://localhost:5000`
 
 ## 2. Run the frontend
 
-Open the `frontend` folder in VS Code and use **Live Server** on `index.html`, same as before. Keep the backend terminal running alongside it.
+Open the `frontend` folder in VS Code and use **Live Server** on `index.html`, same as before. When served from `localhost` or `127.0.0.1`, the frontend automatically uses the backend at `http://localhost:5000/api`; on the deployed site it uses the configured Render API. Keep the backend terminal running alongside it.
+
+Run the backend checks from `backend` with:
+```
+npm test
+```
 
 ## 3. Try it out
 
-- Sign in with a registered account (the seeded demo student is available through the normal login form).
+- Sign in with an existing account or register a student account through the regular login form.
 - **Forgot password?** opens recovery. In development without SMTP, the page provides a local testing link; reset tokens expire after 30 minutes and work once. With SMTP configured, the link is delivered by email instead.
 - **Mock Drive** → pick TCS (or any company) → go through Aptitude → Coding → Theory in one sitting → see the full round-by-round report.
 - **Single Practice** → pick a subject → answer one typed question, scored by the same Jaccard/TF-IDF engine.
 - **Leaderboard** → switch companies to see ranked scores (populates as more sessions complete).
 - **History** → every past session, both mock drives and single-question practice.
-- **Admin** → log in with the admin account above → manage question banks and configure each company's enabled rounds, counts, durations, topics, and difficulty distribution.
+- **Admin** → sign in with an account that has the Admin role → manage question banks and configure each company's enabled rounds, counts, durations, topics, and difficulty distribution.
 
 ## The Coding round: how code actually gets evaluated
 
@@ -62,6 +67,7 @@ Submitted code is evaluated for real, using one of three methods, tried in this 
 3. **Simulated (development only)** — unsupported languages without a local interpreter and without a Judge0 key use a simulated result, clearly labeled in the UI.
 
 In production, code submissions are sent to Judge0 only when `RAPIDAPI_KEY` is configured. If the key is absent, the code-run endpoint returns an unavailable response; it never runs submitted code locally or uses simulated results.
+Compilation errors are recorded as zero-score test results with their verdicts. If the execution service itself fails, the API returns an error and does not save a score.
 
 ### A safety note on real local execution
 
