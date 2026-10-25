@@ -20,7 +20,7 @@ const codingQuestionSchema = new mongoose.Schema(
     constraints: [{ type: String }],
     sample_input: { type: String, default: "" },
     sample_output: { type: String, default: "" },
-    // Per-language starter template, e.g. { python3: "...", cpp: "...", java: "...", javascript: "..." }
+    // Per-language starter template keyed by the Judge0 language identifier.
     // Each includes the stdin/stdout boilerplate for that language, with the
     // core logic left as a stub for the student to fill in.
     starter_code: { type: mongoose.Schema.Types.Mixed, default: {} },

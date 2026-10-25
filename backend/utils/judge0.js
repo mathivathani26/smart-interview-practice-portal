@@ -5,7 +5,7 @@
  * (via RapidAPI) to compile and run submitted code against each test case's
  * stdin and compares stdout to expected_output.
  *
- * Without a key, local execution and simulation are development-only.
+ * Without a key, local execution is development-only.
  */
 
 const axios = require("axios");
@@ -79,13 +79,18 @@ async function runAgainstJudge0(code, language, testCases) {
         ? "Wrong Answer"
         : judgeVerdict;
       const passed = verdict === "Accepted" && actual === expected;
+      const outputParts = [];
+      if (actual) outputParts.push(actual);
+      if (submitRes.data.stderr) outputParts.push(`Error: ${submitRes.data.stderr.trim()}`);
+      if (submitRes.data.compile_output) {
+        outputParts.push(`Compiler output: ${submitRes.data.compile_output.trim()}`);
+      }
+      if (submitRes.data.message) outputParts.push(`Execution message: ${submitRes.data.message}`);
 
       results.push({
         input: tc.hidden ? "(hidden)" : tc.input,
         expected_output: tc.hidden ? "(hidden)" : tc.expected_output,
-        actual_output: tc.hidden
-          ? "(hidden)"
-          : submitRes.data.stderr ? `Error: ${submitRes.data.stderr}` : actual,
+        actual_output: tc.hidden ? "(hidden)" : outputParts.join("\n") || "(no output)",
         passed,
         verdict,
         time_ms: submitRes.data.time ? Math.round(parseFloat(submitRes.data.time) * 1000) : null,
@@ -93,13 +98,36 @@ async function runAgainstJudge0(code, language, testCases) {
         hidden: tc.hidden,
       });
     } catch (err) {
+      const providerStatus = err.response && err.response.status;
+      const timedOut = ["ECONNABORTED", "ETIMEDOUT"].includes(err.code);
       console.error("Judge0 execution request failed", {
         testCase: index + 1,
         errorName: err.name,
         errorCode: err.code,
-        statusCode: err.response && err.response.status,
+        statusCode: providerStatus,
         message: redactSensitiveText(err.message),
       });
+      if (providerStatus === 401 || providerStatus === 403) {
+        throw executionError(
+          "CODE_EXECUTION_PROVIDER_AUTH",
+          "The code execution service is not authorized. Contact the administrator.",
+          503
+        );
+      }
+      if (providerStatus === 429) {
+        throw executionError(
+          "CODE_EXECUTION_PROVIDER_LIMIT",
+          "The code execution service is temporarily busy. Please try again shortly.",
+          503
+        );
+      }
+      if (timedOut) {
+        throw executionError(
+          "CODE_EXECUTION_TIMEOUT",
+          "The code execution service timed out. Please try again.",
+          504
+        );
+      }
       throw executionError(
         "CODE_EXECUTION_FAILED",
         "The code execution service failed. Please try again.",
@@ -108,27 +136,6 @@ async function runAgainstJudge0(code, language, testCases) {
     }
   }
   return results;
-}
-
-function runMock(code, language, testCases) {
-  // Deterministic-ish mock: longer / non-empty code passes more often,
-  // just so behavior feels responsive to actually writing something.
-  const effortBonus = code && code.trim().length > 30 ? 0.25 : 0;
-  const MOCK_FAIL_VERDICTS = ["Wrong Answer", "Time Limit Exceeded", "Runtime Error"];
-  return testCases.map((tc) => {
-    const passed = Math.random() < 0.55 + effortBonus;
-    const verdict = passed ? "Accepted" : MOCK_FAIL_VERDICTS[Math.floor(Math.random() * MOCK_FAIL_VERDICTS.length)];
-    return {
-      input: tc.hidden ? "(hidden)" : tc.input,
-      expected_output: tc.hidden ? "(hidden)" : tc.expected_output,
-      actual_output: tc.hidden ? "(hidden)" : (passed ? tc.expected_output : "(mock) output did not match"),
-      passed,
-      verdict,
-      time_ms: passed ? Math.round(20 + Math.random() * 120) : null,
-      memory_kb: passed ? Math.round(6000 + Math.random() * 9000) : null,
-      hidden: tc.hidden,
-    };
-  });
 }
 
 async function runCode(code, language, testCases) {
@@ -140,8 +147,7 @@ async function runCode(code, language, testCases) {
     throw executionError("NO_TEST_CASES", "This coding question has no test cases available for scoring.", 422);
   }
 
-  // Guard against empty/whitespace-only submissions — neither the mock judge
-  // nor a real judge should ever mark these as passing.
+  // Guard against empty/whitespace-only submissions before invoking an executor.
   if (!code || !code.trim()) {
     return testCases.map((tc) => ({
       input: tc.hidden ? "(hidden)" : tc.input,
@@ -167,26 +173,20 @@ async function runCode(code, language, testCases) {
     );
   }
 
-  // No Judge0 key — try REAL local execution (Python via a local interpreter,
-  // JavaScript via this same Node.js binary) before ever falling back to
-  // the simulated mock. This is intended only for local development.
+  // No Judge0 key — try real local execution only in development.
   if (isLocallySupported(normalizedLanguage)) {
     return runLocal(code, normalizedLanguage, testCases);
   }
 
-  // Only reached for languages we can't execute locally (e.g. C++/Java
-  // without a compiler present) and no Judge0 key configured — this is
-  // simulated, not real, and clearly labeled as such via isMockMode().
-  return runMock(code, normalizedLanguage, testCases);
-}
-
-function usedRealExecution(language) {
-  const normalizedLanguage = typeof language === "string" ? language.trim().toLowerCase() : "";
-  return !!process.env.RAPIDAPI_KEY || isLocallySupported(normalizedLanguage);
+  throw executionError(
+    "CODE_EXECUTION_NOT_CONFIGURED",
+    "No execution provider or local interpreter is available for this language. Configure Judge0 with RAPIDAPI_KEY.",
+    503
+  );
 }
 
 module.exports = {
   runCode,
-  // true only when NEITHER real Judge0 NOR real local execution is being used for this language
-  isMockMode: (language) => !usedRealExecution(language),
+  LANGUAGE_IDS,
+  isMockMode: () => false,
 };

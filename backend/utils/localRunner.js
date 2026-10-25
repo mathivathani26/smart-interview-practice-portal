@@ -205,7 +205,7 @@ async function runLocal(code, language, testCases) {
     return results;
   }
 
-  return null; // language not locally supported — caller falls back to mock
+  return null; // language not locally supported
 }
 
 module.exports = {

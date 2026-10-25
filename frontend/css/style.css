@@ -261,6 +261,7 @@ textarea.code-editor{
 .testcase .tc-status.fail{ background: var(--flag-amber-wash); color: var(--flag-amber); }
 .testcase .tc-status.pending{ background: var(--rule); color: var(--ink-faint); }
 .testcase .tc-row{ color: var(--ink-soft); margin-bottom: 3px; }
+.testcase .tc-output pre{ white-space:pre-wrap; overflow-wrap:anywhere; margin:4px 0 0; }
 .problem-desc{ font-size:.92rem; }
 .problem-desc pre{ background: var(--paper); border:1px solid var(--rule); border-radius: var(--radius-s); padding: 12px; font-family: var(--font-mono); font-size:.82rem; overflow-x:auto; }
 .tag-row{ display:flex; gap:8px; flex-wrap:wrap; margin-top: 10px; }
@@ -773,12 +774,18 @@ select{ touch-action:manipulation; }
   .mock-drive-main .company-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
 @media (max-width:900px){
+  .coding-round-page .app-shell{ grid-template-columns:minmax(0,1fr); }
+  .coding-round-page .app-sidebar{ width:100%; min-width:0; }
+  .coding-round-page .code-shell > *{ min-width:0; }
   .mock-drive-page .app-shell{ grid-template-columns:minmax(0,1fr); }
   .mock-drive-page .app-sidebar{ width:100%; min-width:0; }
   .drive-results-page .app-shell{ grid-template-columns:minmax(0,1fr); }
   .drive-results-page .app-sidebar{ width:100%; min-width:0; }
 }
 @media (max-width:720px){
+  .coding-round-page .code-panel-head{ flex-wrap:wrap; }
+  .coding-round-page .code-panel-head > div{ width:100%; max-width:100%; flex:1 1 100%; justify-content:space-between; }
+  .coding-round-page .code-panel-head select{ width:auto; min-width:0; flex:1 1 130px; }
   .mock-drive-main .company-grid{ grid-template-columns:minmax(0,1fr); }
   .mock-drive-main .company-card{ padding:18px; }
   .mock-drive-main .drive-choice{ padding:12px; }

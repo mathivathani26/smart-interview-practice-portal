@@ -9,7 +9,7 @@ const router = express.Router();
 // POST /api/code/run — run submitted code against a question's VISIBLE test cases only.
 // Nothing is persisted; this is purely for the student to check their work
 // before the real scored submission via /api/sessions/:id/submit-round.
-router.post("/run", requireAuth, async (req, res) => {
+async function runCodeHandler(req, res) {
   let stage = "validate request";
   try {
     const { questionId, code, language } = req.body || {};
@@ -41,15 +41,27 @@ router.post("/run", requireAuth, async (req, res) => {
       message,
     });
     const statusCode = Number.isInteger(err.statusCode) ? err.statusCode : 500;
-    const publicMessage = err.code === "CODE_EXECUTION_NOT_CONFIGURED"
-      ? "Coding is unavailable because production code execution is not configured. Contact the administrator."
-      : err.code === "CODE_EXECUTION_FAILED"
-        ? "The code execution service failed. Please try again."
-        : statusCode === 500
-          ? "Unable to run this code right now. Please try again."
-          : err.message;
+    let publicMessage;
+    if (err.code === "CODE_EXECUTION_NOT_CONFIGURED") {
+      publicMessage = "Code execution is not configured for this language. Contact the administrator.";
+    } else if ([
+      "CODE_EXECUTION_PROVIDER_AUTH",
+      "CODE_EXECUTION_PROVIDER_LIMIT",
+      "CODE_EXECUTION_TIMEOUT",
+    ].includes(err.code)) {
+      publicMessage = err.message;
+    } else if (err.code === "CODE_EXECUTION_FAILED") {
+      publicMessage = "The code execution service failed. Please try again.";
+    } else {
+      publicMessage = statusCode === 500
+        ? "Unable to run this code right now. Please try again."
+        : err.message;
+    }
     res.status(statusCode).json({ message: publicMessage, code: err.code || "CODE_EXECUTION_FAILED" });
   }
-});
+}
+
+router.post("/run", requireAuth, runCodeHandler);
 
 module.exports = router;
+module.exports.runCodeHandler = runCodeHandler;

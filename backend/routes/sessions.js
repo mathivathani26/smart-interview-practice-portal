@@ -533,13 +533,22 @@ async function submitRoundHandler(req, res) {
       message,
     });
     const statusCode = Number.isInteger(err.statusCode) ? err.statusCode : 500;
-    const publicMessage = err.code === "CODE_EXECUTION_NOT_CONFIGURED"
-      ? "Coding is unavailable because production code execution is not configured. Contact the administrator."
-      : err.code === "CODE_EXECUTION_FAILED" || err.code === "INVALID_EXECUTION_RESULTS"
-        ? "The code execution service failed. Your answer was not scored; please try again."
-        : statusCode === 500
-          ? "Unable to score this round right now. Please try again."
-          : err.message;
+    let publicMessage;
+    if (err.code === "CODE_EXECUTION_NOT_CONFIGURED") {
+      publicMessage = "Code execution is not configured for this language. Your answer was not scored; contact the administrator.";
+    } else if ([
+      "CODE_EXECUTION_PROVIDER_AUTH",
+      "CODE_EXECUTION_PROVIDER_LIMIT",
+      "CODE_EXECUTION_TIMEOUT",
+    ].includes(err.code)) {
+      publicMessage = `${err.message} Your answer was not scored.`;
+    } else if (err.code === "CODE_EXECUTION_FAILED" || err.code === "INVALID_EXECUTION_RESULTS") {
+      publicMessage = "The code execution service failed. Your answer was not scored; please try again.";
+    } else {
+      publicMessage = statusCode === 500
+        ? "Unable to score this round right now. Please try again."
+        : err.message;
+    }
     res.status(statusCode).json({ message: publicMessage, code: err.code || "ROUND_SCORING_FAILED" });
   }
 }

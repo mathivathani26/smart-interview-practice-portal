@@ -112,6 +112,10 @@
             <textarea id="cStarterPy" rows="3"></textarea>
           </div>
           <div class="field">
+            <label for="cStarterC">C starter code</label>
+            <textarea id="cStarterC" rows="3"></textarea>
+          </div>
+          <div class="field">
             <label for="cStarterJs">JavaScript starter code</label>
             <textarea id="cStarterJs" rows="3"></textarea>
           </div>
@@ -230,10 +234,12 @@
         } else if (bank === 'coding') {
           const starter_code = {};
           const py = document.getElementById('cStarterPy').value.trim();
+          const c = document.getElementById('cStarterC').value.trim();
           const js = document.getElementById('cStarterJs').value.trim();
           const cpp = document.getElementById('cStarterCpp').value.trim();
           const java = document.getElementById('cStarterJava').value.trim();
           if (py) starter_code.python3 = py;
+          if (c) starter_code.c = c;
           if (js) starter_code.javascript = js;
           if (cpp) starter_code.cpp = cpp;
           if (java) starter_code.java = java;

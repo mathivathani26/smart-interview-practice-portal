@@ -64,9 +64,8 @@ Submitted code is evaluated for real, using one of three methods, tried in this 
 
 1. **Real Judge0 API** — if you set `RAPIDAPI_KEY` in `.env`, every language runs on Judge0's real compilers/interpreters.
 2. **Real local execution** (development only, no setup needed) — when `RAPIDAPI_KEY` is absent and `NODE_ENV` is not `production`, the backend can run submitted code directly using supported local interpreters.
-3. **Simulated (development only)** — unsupported languages without a local interpreter and without a Judge0 key use a simulated result, clearly labeled in the UI.
 
-In production, code submissions are sent to Judge0 only when `RAPIDAPI_KEY` is configured. If the key is absent, the code-run endpoint returns an unavailable response; it never runs submitted code locally or uses simulated results.
+In production, code submissions are sent to Judge0 only when `RAPIDAPI_KEY` is configured. If neither Judge0 nor a supported local interpreter is available, the request fails explicitly and no score is saved; the backend never invents simulated test results.
 Compilation errors are recorded as zero-score test results with their verdicts. If the execution service itself fails, the API returns an error and does not save a score.
 
 ### A safety note on real local execution
@@ -74,11 +73,11 @@ Compilation errors are recorded as zero-score test results with their verdicts. 
 Running submitted code directly on the development machine is intended only for local practice. It is **not** a sandboxed, multi-tenant judge. Public deployments must use Judge0 for code execution; the production-mode guard disables code execution when Judge0 is not configured rather than falling back to local execution.
 
 **To enable real code execution:**
-1. Get a free key at [rapidapi.com/judge0-official/api/judge0-ce](https://rapidapi.com/judge0-official/api/judge0-ce)
-2. Add it to `backend/.env`: `RAPIDAPI_KEY=your_key_here`
-3. Restart the backend (`npm start`)
+1. Create a RapidAPI account, subscribe to the existing [Judge0 CE API](https://rapidapi.com/judge0-official/api/judge0-ce), and obtain its key.
+2. Locally, set `RAPIDAPI_KEY` in `backend/.env`. On Render, add `RAPIDAPI_KEY` to the **backend Web Service's Environment** settings. Do not put it in frontend variables or Git.
+3. Restart the local backend or redeploy the Render backend after saving the variable.
 
-Submitted code now actually compiles and runs against each test case's real stdin/stdout via Judge0.
+The frontend supports **Python 3** (Judge0 71), **C** (50), **C++** (54), **Java** (62), and **JavaScript/Node.js** (63). Each language has a non-solution starter template when a question has no language-specific template. Existing question-specific templates are retained. Switching languages keeps the edited source per language for that question; **Restore Starter Code** asks before replacing non-empty edits. Run Code displays visible test-case output, while hidden tests remain hidden until scored.
 
 ## What's real vs. what's a placeholder
 
@@ -88,8 +87,8 @@ Submitted code now actually compiles and runs against each test case's real stdi
 | Theory scoring (Jaccard + TF-IDF) | Fully real, runs in Node, no external API |
 | Aptitude scoring | Fully real (instant, exact-match) |
 | Coding scoring | Local execution is for development only; production requires Judge0 via `RAPIDAPI_KEY` |
-| **Coding: real verdict types (Accepted/Wrong Answer/Runtime Error/Compilation Error/TLE), time** | Real for all 4 languages via local execution; memory usage is only reported when using Judge0 |
-| **Coding: per-language starter code** | Each of the 9 seeded problems has a distinct, verified starter template for Python, JavaScript, C++, and Java — switching the language dropdown actually swaps the code shown, not just the syntax highlighting |
+| **Coding: real verdict types (Accepted/Wrong Answer/Runtime Error/Compilation Error/TLE), time** | Real for configured provider execution; memory usage is only reported when using Judge0 |
+| **Coding: per-language starter code** | Question-specific templates are used when present; otherwise safe, editable input/entry-point templates are provided for Python 3, C, C++, Java, and JavaScript |
 | **Coding: paste detection** | Fully real — listens for paste events on the code editor, logs a count per submission |
 | **Coding: approach-tag feedback** | Heuristic keyword/pattern detection (see note below) — not full static analysis |
 | **Coding: Monaco Editor** (syntax highlighting, line numbers) | Fully real, loaded from CDN; falls back to a plain textarea automatically if there's no internet |
@@ -109,15 +108,15 @@ Submitted code now actually compiles and runs against each test case's real stdi
    - **JavaScript** — via the same Node.js process already running the server
    - **C++** — compiled with `g++` and executed as a real binary
    - **Java** — run via the JDK 11+ single-file source launcher (`java Main.java`), so no separate compile step is needed
-3. **Simulated mock** — only reached if a language's compiler/interpreter genuinely isn't installed on your machine (e.g. no `g++`, no JDK) and no Judge0 key is configured. Clearly labeled with a "Mock judge" badge in the UI.
+3. **Unavailable** — if a language's compiler/interpreter is not installed and no Judge0 key is configured, execution fails explicitly and no score is awarded.
 
-This is genuine execution, not simulation: wrong code fails, correct code passes, entirely offline for every language.
+This is genuine execution, not simulation: wrong code fails and correct code passes when a compatible local interpreter/compiler or Judge0 is configured.
 
-**Per-language starter code:** each of the 9 seeded coding questions carries a separate, independently-verified starter template per language (`starter_code: { python3, javascript, cpp, java }` on the `CodingQuestion` model), each with the stdin-reading/output-printing boilerplate already wired up — a student only needs to fill in the actual logic. Switching the language dropdown mid-question swaps in that language's template; if you'd already started typing in the language you're leaving, it's remembered and restored if you switch back.
+**Per-language starter code:** the editor uses a question-specific `starter_code` template where one exists and falls back to the language template otherwise. Switching language preserves the student's draft for each language on that question.
 
 **Java note:** every Java template (and any Java code an admin adds later) must declare `public class Main` — the single-file launcher requires the file name to match the public class name, and the backend always writes it to `Main.java`.
 
-**System requirements for full local execution:** Python and JavaScript need nothing extra (Node is already running your server; Python 3 is commonly pre-installed, especially on Mac/Linux). C++ needs `g++` on your PATH, and Java needs a JDK 11+ (for the single-file launcher). If a compiler/interpreter isn't found, that specific language falls back to the simulated mock automatically — nothing crashes, but check your backend terminal's startup output if a language isn't executing for real when you expect it to.
+**System requirements for local execution without Judge0:** Python 3 is required for Python; Node.js runs JavaScript; C++ requires `g++`; Java requires a JDK 11+; C requires a configured Judge0 key. If an interpreter/compiler is unavailable, execution fails clearly and no score is saved.
 
 **Safety note:** local execution runs submitted code directly on your machine with a 5-second timeout. This is intended for single-user local practice (you running your own code on your own computer), not a sandboxed, multi-tenant-safe judge — don't expose this backend on a shared or public server without adding real sandboxing (containers, resource limits, etc.).
 
@@ -162,5 +161,5 @@ Either use the Admin panel (Aptitude/Coding/Theory tabs → "+ Add Question"), o
 - **"Failed to fetch" in the browser** → backend isn't running, or isn't on port 5000.
 - **CORS errors in the console** → make sure you're opening the frontend via Live Server (`http://127.0.0.1:5500`), not `file://`.
 - **"No more questions available for this selection"** → that question bank + category + difficulty combination is empty; add more questions via Admin, or pick a different combination.
-- **Coding round result doesn't match what you expected** → check the "Simulated results" badge on the results panel. If it's showing, neither Python nor a Judge0 key was available for that language — install Python 3 (`python3 --version` to check) or add `RAPIDAPI_KEY` for real execution. If the badge is NOT showing, the result reflects genuine execution of your code.
+- **Coding execution is unavailable** → configure `RAPIDAPI_KEY` for Judge0, or install a supported local interpreter/compiler for development. Submissions are not simulated when execution is unavailable.
 - **Can't reach Admin panel** → you're logged in as the demo student, not the admin. Log out and log back in with `admin@smartinterview.local` / `Admin@1234`.
