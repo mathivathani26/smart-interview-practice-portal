@@ -133,10 +133,6 @@ const Api = {
     createCompany: (payload) => apiRequest("/admin/companies", { method: "POST", body: payload }),
     validatePattern: (companyId, round_sequence) => apiRequest(`/admin/companies/${companyId}/validate-pattern`, { method: "POST", body: { round_sequence } }),
     updatePattern: (companyId, round_sequence) => apiRequest(`/admin/companies/${companyId}/pattern`, { method: "PUT", body: { round_sequence } }),
-    createDrive: (companyId, payload) => apiRequest(`/admin/companies/${companyId}/drives`, { method: "POST", body: payload }),
-    updateDrive: (driveId, payload) => apiRequest(`/admin/drives/${driveId}`, { method: "PUT", body: payload }),
-    updateDriveStatus: (driveId, status) => apiRequest(`/admin/drives/${driveId}/status`, { method: "PUT", body: { status } }),
-    deleteDrive: (driveId) => apiRequest(`/admin/drives/${driveId}`, { method: "DELETE" }),
     deleteCompany: (id) => apiRequest(`/admin/companies/${id}`, { method: "DELETE" }),
   },
 };

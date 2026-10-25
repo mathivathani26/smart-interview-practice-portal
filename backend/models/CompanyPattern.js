@@ -10,6 +10,11 @@ const roundSpecSchema = new mongoose.Schema(
     difficulty: { type: String, default: null },
     time_limit_seconds: { type: Number, default: 300 },
     included_topics: { type: [String], default: [] },
+    difficulty_counts: {
+      easy: { type: Number, min: 0 },
+      medium: { type: Number, min: 0 },
+      hard: { type: Number, min: 0 },
+    },
     difficulty_distribution: {
       easy: { type: Number, default: 0 },
       medium: { type: Number, default: 0 },

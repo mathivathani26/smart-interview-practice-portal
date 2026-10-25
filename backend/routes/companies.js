@@ -7,6 +7,7 @@ const CodingQuestion = require("../models/CodingQuestion");
 const TheoryQuestion = require("../models/TheoryQuestion");
 const requireAuth = require("../middleware/auth");
 const { validateRoundSequence, validateRoundAvailability } = require("../utils/companyPattern");
+const { selectCanonicalDriveConfig } = require("../utils/canonicalDriveConfig");
 const { getCompanyQuestionIds } = require("../utils/companyQuestionAssignments");
 
 const router = express.Router();
@@ -16,64 +17,39 @@ const QUESTION_BANKS = {
   theory: TheoryQuestion,
 };
 
-async function getValidRoundSequence(company, pattern) {
-  if (!pattern || pattern.round_sequence.length === 0) return [];
-  const sequence = pattern.round_sequence.map((round) => round.toObject());
-  if (validateRoundSequence(sequence)) return [];
+async function getCompanyDrive(company, pattern) {
+  const legacyDrives = await MockDrive.find({ company: company._id, status: "published" })
+    .sort({ createdAt: 1, _id: 1 });
+  const config = selectCanonicalDriveConfig(pattern, legacyDrives);
+  const sequence = config.round_sequence.map((round) => (
+    typeof round.toObject === "function" ? round.toObject() : round
+  ));
+  if (!sequence.length || validateRoundSequence(sequence)) return null;
+
   const questionIdsByType = await getCompanyQuestionIds(company._id);
   const errors = await validateRoundAvailability(sequence, QUESTION_BANKS, company.name, questionIdsByType);
-  return errors.length === 0 ? sequence : [];
+  return errors.length ? null : sequence;
 }
 
-async function getPublishedDrives(company, pattern) {
-  const drives = await MockDrive.find({ company: company._id, status: "published" }).sort({ createdAt: 1 });
-  const questionIdsByType = await getCompanyQuestionIds(company._id);
-  const validDrives = [];
-  for (const drive of drives) {
-    const sequence = drive.round_sequence.map((round) => round.toObject());
-    if (validateRoundSequence(sequence)) continue;
-    const errors = await validateRoundAvailability(sequence, QUESTION_BANKS, company.name, questionIdsByType);
-    if (errors.length) continue;
-    validDrives.push({
-      id: drive._id,
-      name: drive.name,
-      status: drive.status,
-      round_sequence: sequence,
-    });
-  }
-
-  if (!drives.length && pattern && pattern.round_sequence.length > 0) {
-    const legacySequence = await getValidRoundSequence(company, pattern);
-    if (legacySequence.length) {
-      validDrives.push({
-        id: pattern._id,
-        name: "Existing Mock Drive",
-        status: "published",
-        legacy: true,
-        round_sequence: legacySequence,
-      });
-    }
-  }
-  return validDrives;
+async function companyResponse(company, pattern) {
+  const roundSequence = await getCompanyDrive(company, pattern);
+  return {
+    id: company._id,
+    name: company.name,
+    description: company.description,
+    has_pattern: Boolean(roundSequence),
+    round_sequence: roundSequence || [],
+  };
 }
 
-// GET /api/companies  — list all companies with their round pattern
 router.get("/", requireAuth, async (req, res) => {
   try {
     const companies = await Company.find().sort({ name: 1 });
-    const patterns = await CompanyPattern.find({ company: { $in: companies.map((c) => c._id) } });
-    const patternByCompany = Object.fromEntries(patterns.map((p) => [String(p.company), p]));
-
-    const result = (await Promise.all(companies.map(async (company) => {
-      const drives = await getPublishedDrives(company, patternByCompany[String(company._id)]);
-      return {
-        id: company._id,
-        name: company.name,
-        description: company.description,
-        has_pattern: drives.length > 0,
-        drives,
-      };
-    }))).filter((company) => company.drives.length > 0);
+    const patterns = await CompanyPattern.find({ company: { $in: companies.map((company) => company._id) } });
+    const patternByCompany = Object.fromEntries(patterns.map((pattern) => [String(pattern.company), pattern]));
+    const result = (await Promise.all(companies.map((company) => (
+      companyResponse(company, patternByCompany[String(company._id)])
+    )))).filter((company) => company.has_pattern);
     res.json(result);
   } catch (err) {
     console.error(err);
@@ -81,20 +57,12 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
-// GET /api/companies/:id
 router.get("/:id", requireAuth, async (req, res) => {
   try {
     const company = await Company.findById(req.params.id);
     if (!company) return res.status(404).json({ message: "Company not found" });
     const pattern = await CompanyPattern.findOne({ company: company._id });
-    const drives = await getPublishedDrives(company, pattern);
-    res.json({
-      id: company._id,
-      name: company.name,
-      description: company.description,
-      has_pattern: drives.length > 0,
-      drives,
-    });
+    res.json(await companyResponse(company, pattern));
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error fetching company" });

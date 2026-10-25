@@ -27,11 +27,11 @@ Open `.env`:
 - To send real recovery emails, set `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` in `backend/.env`. Set `FRONTEND_URL` to the origin serving the frontend (for example `http://localhost:5500`). Never commit SMTP credentials. In production, configure SMTP and set `NODE_ENV=production`; reset tokens are never returned in production responses or logs.
 - For production code execution, configure `RAPIDAPI_KEY` for Judge0 (see "The Coding round" below). Never commit this key.
 
-Add the practice companies, questions, assignments, and drives:
+Add the practice companies, questions, assignments, and missing company drive configurations:
 ```
 npm run seed
 ```
-This additive, repeat-safe seed does not delete or replace existing data and does not create user accounts. It adds missing data for Amazon, Wipro, TCS, Infosys, Accenture, and Cognizant, including questions, company assignments, and one published practice drive per company. Register an account through the regular login form; create an Admin account separately.
+This additive, repeat-safe seed does not delete or replace existing data and does not create user accounts. It adds missing data for Amazon, Wipro, TCS, Infosys, Accenture, and Cognizant, including questions, company assignments, and one count-based company drive configuration when none exists. Legacy drive records are retained and are not duplicated. Register an account through the regular login form; create an Admin account separately.
 
 Start the backend:
 ```
@@ -56,7 +56,7 @@ npm test
 - **Single Practice** → pick a subject → answer one typed question, scored by the same Jaccard/TF-IDF engine.
 - **Leaderboard** → switch companies to see ranked scores (populates as more sessions complete).
 - **History** → every past session, both mock drives and single-question practice.
-- **Admin** → sign in with an account that has the Admin role → manage question banks and configure each company's enabled rounds, counts, durations, topics, and difficulty distribution.
+- **Admin** → sign in with an account that has the Admin role → manage question banks and configure each company's single drive, round counts, durations, topics, and per-difficulty question counts.
 
 ## The Coding round: how code actually gets evaluated
 
@@ -141,14 +141,16 @@ works completely, just without syntax highlighting.
 
 ## Company mock-drive settings
 
-Use **Admin → Company Patterns** to create a company and configure or edit its rounds. The authenticated admin API remains available:
+Use **Admin → Company Patterns** to create a company and configure or edit its one General Practice Drive. New settings are saved on the company pattern; independent drive creation and publishing are no longer available. Legacy `MockDrive` records remain in the database for existing sessions and history.
 
 - `GET /api/admin/companies` — list companies and their saved settings.
 - `POST /api/admin/companies` — create a company.
 - `PUT /api/admin/companies/:id/pattern` — validate and save its round configuration.
 - `DELETE /api/admin/companies/:id` — delete a company and its pattern.
 
-Round configuration is stored in `CompanyPattern.round_sequence`. Counts must be non-negative integers, enabled rounds need a positive count, durations must be positive, and a configured difficulty distribution must total 100%. Topic filters use aptitude categories, coding tags, or theory subjects. When a student starts a drive, the backend validates eligibility and stores a fixed, randomized set of question IDs and the active configuration on the new `Session`; if the pool cannot satisfy the configuration, the drive is rejected with an explanatory message before a session is created. Existing saved patterns without the new optional fields continue to work. A company with no pattern must be configured by an admin before a drive can start.
+Round configuration is stored in `CompanyPattern.round_sequence`. Easy, Medium, and Hard counts must each be non-negative integers and total exactly to the configured number of questions. Enabled rounds need a positive total, durations must be positive, and each configured difficulty pool must contain enough eligible questions before the settings can be saved. Topic filters use aptitude categories, coding tags, or theory subjects; multiple coding tags use OR matching after normalizing case, whitespace, and common plurals.
+
+Older percentage-based settings are not treated as question counts in storage. The Admin panel displays a deterministic suggested count conversion for complete percentage distributions and clearly marks legacy settings; an administrator must review and explicitly save the counts before they become the canonical configuration. Legacy duplicate drive records are not deleted: when a company has no canonical pattern, the oldest published legacy configuration is used, with only one configuration exposed to students. A saved company pattern takes precedence. Starting a drive validates eligibility and snapshots a fixed, randomized set of question IDs and the active count-based configuration in the new `Session`. If any required pool is insufficient, the start is rejected with an explanatory message before a session is created. Historical session records remain unchanged.
 
 Marks per question, negative marking, and per-round passing thresholds are not exposed because the current scoring and result models do not support those behaviors; existing scoring remains unchanged.
 

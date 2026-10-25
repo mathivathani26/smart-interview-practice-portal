@@ -48,7 +48,7 @@
     <div class="app-topbar">
       <div>
         <h1>Start a Mock Drive</h1>
-        <div class="sub">Choose a company — you'll go through its exact round pattern in one sitting.</div>
+        <div class="sub">Choose a company to complete its General Practice Drive in one sitting.</div>
       </div>
     </div>
 
@@ -58,7 +58,7 @@
 
     <div style="margin-top:30px;">
       <button id="startDriveBtn" class="btn btn-primary btn-lg" disabled>Start Mock Drive →</button>
-      <p style="max-width:68ch; color:var(--ink-faint);">Choose a published drive to see its independent Aptitude, Coding, and Theory rounds.</p>
+      <p style="max-width:68ch; color:var(--ink-faint);">Each company has one drive with its configured Aptitude, Coding, and Theory rounds.</p>
       <p id="startDriveError" class="error-text" role="alert" aria-live="polite" hidden></p>
     </div>
   </main>
@@ -71,7 +71,6 @@
 
   const ICONS = { aptitude: "🧮", coding: "{ }", theory: "✎" };
   let selectedCompany = null;
-  let selectedDrive = null;
   let companies = [];
 
   function escapeHtml(value) {
@@ -87,32 +86,27 @@
       return;
     }
     grid.innerHTML = companies.map(c => {
+      const rounds = ['aptitude', 'coding', 'theory'].map(type => {
+        const spec = c.round_sequence.find(round => round.round_type === type && round.enabled !== false);
+        return `<div class="pi ${type} ${spec ? '' : 'off'}"><div class="pi-circle">${ICONS[type]}</div><span class="pi-count">${spec ? spec.question_count : '—'}</span></div>`;
+      }).join('');
       return `
-        <div class="company-card" data-company-id="${c.id}">
-          <h4>${escapeHtml(c.name)}</h4>
-          <p class="company-sub">${escapeHtml(c.description)}</p>
-          <div class="drive-choice-list">${c.drives.map(drive => {
-            const rounds = ['aptitude', 'coding', 'theory'].map(type => {
-              const spec = drive.round_sequence.find(round => round.round_type === type && round.enabled !== false);
-              return `<div class="pi ${type} ${spec ? '' : 'off'}"><div class="pi-circle">${ICONS[type]}</div><span class="pi-count">${spec ? spec.question_count : '—'}</span></div>`;
-            }).join('');
-            return `<button type="button" class="drive-choice" data-drive-id="${escapeHtml(drive.id)}">
-              <span class="drive-choice-title">${escapeHtml(drive.name)}</span>
-              <span class="pattern-icons">${rounds}</span>
-            </button>`;
-          }).join('')}</div>
-        </div>`;
+        <button type="button" class="company-card" data-company-id="${escapeHtml(c.id)}">
+          <span class="company-card-name">${escapeHtml(c.name)}</span>
+          <span class="company-sub">${escapeHtml(c.description)}</span>
+          <span class="drive-choice-title">General Practice Drive</span>
+          <span class="pattern-icons">${rounds}</span>
+        </button>`;
     }).join('');
 
-    document.querySelectorAll('.drive-choice').forEach(button => {
+    document.querySelectorAll('.company-card').forEach(button => {
       button.addEventListener('click', () => {
-        document.querySelectorAll('.drive-choice').forEach(item => item.classList.remove('selected'));
+        document.querySelectorAll('.company-card').forEach(item => item.classList.remove('selected'));
         button.classList.add('selected');
-        selectedCompany = companies.find(company => company.drives.some(drive => drive.id === button.dataset.driveId));
-        selectedDrive = selectedCompany.drives.find(drive => drive.id === button.dataset.driveId);
+        selectedCompany = companies.find(company => String(company.id) === button.dataset.companyId);
         const startButton = document.getElementById('startDriveBtn');
         startButton.disabled = false;
-        startButton.textContent = `Start ${selectedDrive.name} →`;
+        startButton.textContent = `Start ${selectedCompany.name} Mock Drive →`;
       });
     });
   }
@@ -134,7 +128,7 @@
     btn.disabled = true;
     btn.textContent = 'Starting…';
     try {
-      const data = await Api.startSession({ mode: 'mock_drive', driveId: selectedDrive.id });
+      const data = await Api.startSession({ mode: 'mock_drive', companyId: selectedCompany.id });
       Drive.save({
         sessionId: data.sessionId,
         companyName: data.company.name,

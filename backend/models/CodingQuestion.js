@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { normalizeTags } = require("../utils/codingTags");
 
 const testCaseSchema = new mongoose.Schema(
   {
@@ -28,5 +29,18 @@ const codingQuestionSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+codingQuestionSchema.pre("validate", function normalizeCodingQuestionTags() {
+  this.tags = normalizeTags(this.tags);
+});
+
+codingQuestionSchema.pre("findOneAndUpdate", function normalizeCodingQuestionTagUpdates() {
+  const update = this.getUpdate() || {};
+  const target = update.$set || update;
+  if (Object.prototype.hasOwnProperty.call(target, "tags")) {
+    target.tags = normalizeTags(target.tags);
+    this.setUpdate(update);
+  }
+});
 
 module.exports = mongoose.model("CodingQuestion", codingQuestionSchema);

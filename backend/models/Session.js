@@ -8,6 +8,11 @@ const assignedRoundSchema = new mongoose.Schema(
     category: { type: String, default: null },
     difficulty: { type: String, default: null },
     included_topics: [{ type: String }],
+    difficulty_counts: {
+      easy: { type: Number, min: 0 },
+      medium: { type: Number, min: 0 },
+      hard: { type: Number, min: 0 },
+    },
     difficulty_distribution: {
       easy: { type: Number, default: 0 },
       medium: { type: Number, default: 0 },

@@ -1,6 +1,7 @@
 require("dotenv").config();
 const mongoose = require("mongoose");
 const Company = require("../models/Company");
+const CompanyPattern = require("../models/CompanyPattern");
 const MockDrive = require("../models/MockDrive");
 const AptitudeQuestion = require("../models/AptitudeQuestion");
 const TheoryQuestion = require("../models/TheoryQuestion");
@@ -204,9 +205,9 @@ const SUBJECT_DISTRIBUTION = {
 
 const CATEGORY_DISTRIBUTION = { quantitative: 5, logical: 3, verbal: 2 };
 const ROUND_CONFIG = [
-  { round_type: "aptitude", question_count: 10, time_limit_seconds: 1800 },
-  { round_type: "theory", question_count: 10, time_limit_seconds: 3600 },
-  { round_type: "coding", question_count: 5, time_limit_seconds: 5400 },
+  { round_type: "aptitude", question_count: 10, difficulty_counts: { easy: 4, medium: 4, hard: 2 }, time_limit_seconds: 1800 },
+  { round_type: "theory", question_count: 10, difficulty_counts: { easy: 4, medium: 6, hard: 0 }, time_limit_seconds: 3600 },
+  { round_type: "coding", question_count: 5, difficulty_counts: { easy: 3, medium: 2, hard: 0 }, time_limit_seconds: 5400 },
 ];
 
 function questionKey(question) {
@@ -281,11 +282,11 @@ async function seedPracticeData() {
     await ensureAssignments(company, "theory", selectedTheory);
     await ensureAssignments(company, "coding", codingQuestions);
 
-    const driveName = "General Practice Drive";
-    let drive = await MockDrive.findOne({ company: company._id, name: driveName });
-    if (!drive) {
+    const existingPattern = await CompanyPattern.findOne({ company: company._id });
+    const existingLegacyDrive = await MockDrive.exists({ company: company._id });
+    if (!existingPattern && !existingLegacyDrive) {
       const questionIdsByType = await getCompanyQuestionIds(company._id);
-      const validationError = validateRoundSequence(ROUND_CONFIG);
+      const validationError = validateRoundSequence(ROUND_CONFIG, { allowLegacy: false });
       if (validationError) throw new Error(validationError);
       const allocationErrors = await validateRoundAvailability(
         ROUND_CONFIG,
@@ -294,13 +295,11 @@ async function seedPracticeData() {
         questionIdsByType
       );
       if (allocationErrors.length) throw new Error(allocationErrors.join("\n"));
-      drive = await MockDrive.create({
+      await CompanyPattern.create({
         company: company._id,
-        name: driveName,
-        status: "published",
         round_sequence: ROUND_CONFIG,
       });
-      console.log(`Published validated General Practice Drive for ${company.name}.`);
+      console.log(`Saved validated single-drive configuration for ${company.name}.`);
     }
   }
 
@@ -345,4 +344,11 @@ if (require.main === module) {
   }
 }
 
-module.exports = { seedPracticeData, COMPANIES, APTITUDE_QUESTIONS, THEORY_QUESTIONS, CODING_QUESTIONS };
+module.exports = {
+  seedPracticeData,
+  COMPANIES,
+  APTITUDE_QUESTIONS,
+  THEORY_QUESTIONS,
+  CODING_QUESTIONS,
+  ROUND_CONFIG,
+};

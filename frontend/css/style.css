@@ -750,25 +750,56 @@ select{ touch-action:manipulation; }
   .company-grid{ grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr)); }
 }
 
-/* The mock-drive chooser keeps the drive title readable above its round summary. */
+/* The mock-drive chooser keeps one readable company drive and round summary per card. */
 .mock-drive-main .company-grid{
   grid-template-columns:repeat(4,minmax(0,1fr));
   align-items:stretch;
 }
 .mock-drive-main .company-card{
   display:flex;
+  width:100%;
   min-width:0;
   flex-direction:column;
   padding:20px;
+  border:1px solid var(--rule-strong);
+  color:var(--ink);
+  font:inherit;
+  text-align:left;
+  appearance:none;
   overflow-wrap:normal;
   word-break:normal;
 }
-.mock-drive-main .company-card h4,
+.mock-drive-main .company-card:focus-visible{ outline:3px solid var(--red-mark); outline-offset:3px; }
+.mock-drive-main .company-card-name,
 .mock-drive-main .company-card .company-sub{
   overflow-wrap:anywhere;
 }
-.mock-drive-main .drive-choice-list{ margin-top:auto; padding-top:16px; }
-.mock-drive-main .drive-choice-title{ white-space:normal; }
+.mock-drive-main .company-card-name{
+  display:block;
+  margin:0 0 4px;
+  font-family:var(--font-body);
+  font-size:1.125rem;
+  font-weight:700;
+  line-height:1.4;
+}
+.mock-drive-main .company-card .company-sub{ display:block; margin:0; }
+.mock-drive-main .drive-choice-title{ margin-top:16px; font-size:.95rem; font-weight:700; line-height:1.35; }
+.mock-drive-main .pattern-icons{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:6px;
+  width:100%;
+  margin-top:10px;
+  padding-top:12px;
+}
+.mock-drive-main .pattern-icons .pi{
+  min-width:0;
+  flex-direction:row;
+  justify-content:center;
+  gap:6px;
+}
+.mock-drive-main .pattern-icons .pi .pi-circle{ flex:0 0 28px; width:28px; height:28px; font-size:.9rem; }
+.mock-drive-main .pattern-icons .pi .pi-count{ font-family:var(--font-mono); font-size:.8rem; line-height:1; }
 .mock-drive-main #startDriveBtn{ min-height:48px; }
 @media (max-width:1200px){
   .mock-drive-main .company-grid{ grid-template-columns:repeat(2,minmax(0,1fr)); }
@@ -788,5 +819,4 @@ select{ touch-action:manipulation; }
   .coding-round-page .code-panel-head select{ width:auto; min-width:0; flex:1 1 130px; }
   .mock-drive-main .company-grid{ grid-template-columns:minmax(0,1fr); }
   .mock-drive-main .company-card{ padding:18px; }
-  .mock-drive-main .drive-choice{ padding:12px; }
 }

@@ -69,7 +69,7 @@
       </table>
       <section class="company-settings">
         <div class="panel-head"><h2>Company mock-drive settings</h2></div>
-        <p class="small-muted">Disabled rounds are skipped. Topic filters use aptitude categories, coding tags, or theory subjects. Difficulty values are percentages and must total 100 when used.</p>
+        <p class="small-muted">Each company has one General Practice Drive. Disabled rounds are skipped. Multiple coding topics match questions that have any one of the selected tags.</p>
         <div class="field-row">
           <div class="field">
             <label for="patternCompanySelect">Company</label>
@@ -88,38 +88,9 @@
           <input id="newCompanyDescription" type="text" maxlength="300" placeholder="Company round pattern">
         </div>
         <p id="patternMessage" class="error-text" role="status" aria-live="polite" style="display:none;"></p>
+        <p id="legacyConfigNotice" class="small-muted" role="status" style="display:none;"></p>
         <div id="roundSettingsFields"></div>
         <button type="button" class="btn btn-primary" id="savePatternBtn">Save company settings</button>
-      </section>
-      <section class="company-settings">
-        <div class="panel-head"><h2>Independent mock drives</h2></div>
-        <p class="small-muted">Each drive has its own rounds and publish status. Draft drives are not visible to students; publishing requires all configured questions to be available.</p>
-        <div class="field-row">
-          <div class="field">
-            <label for="driveCompanySelect">Company</label>
-            <select id="driveCompanySelect"><option value="">Loading companies…</option></select>
-          </div>
-          <div class="field">
-            <label for="driveSelect">Drive to edit</label>
-            <select id="driveSelect"><option value="">Create a new drive</option></select>
-          </div>
-          <div class="field">
-            <label for="driveName">Drive name</label>
-            <input id="driveName" type="text" maxlength="100" placeholder="e.g. Advanced Mock Drive">
-          </div>
-        </div>
-        <p id="driveMessage" class="error-text" role="status" aria-live="polite" style="display:none;"></p>
-        <div id="driveRoundSettingsFields"></div>
-        <div class="button-row">
-          <button type="button" class="btn btn-ghost" id="newDriveBtn">New drive</button>
-          <button type="button" class="btn btn-primary" id="saveDriveBtn">Save as draft</button>
-          <button type="button" class="btn btn-ghost" id="publishDriveBtn" disabled>Publish</button>
-          <button type="button" class="btn btn-ghost" id="unpublishDriveBtn" disabled>Unpublish</button>
-        </div>
-        <table class="admin-table" style="margin-top:24px;">
-          <thead><tr><th>Company</th><th>Drive</th><th>Status</th><th>Aptitude</th><th>Coding</th><th>Theory</th><th>Action</th></tr></thead>
-          <tbody id="drivesBody"><tr><td colspan="7" style="color:var(--ink-faint);">Loading drives…</td></tr></tbody>
-        </table>
       </section>
     </div>
   </main>
@@ -210,23 +181,16 @@
             <td>${fmt('aptitude', 'questions')}</td>
             <td>${fmt('coding', 'problems')}</td>
             <td>${fmt('theory', 'questions')}</td>
-            <td>${c.has_pattern ? 'Configured' : 'Needs setup'}</td>
+            <td>${c.legacy_config ? 'Legacy — review and save' : c.has_pattern ? 'Configured' : 'Needs setup'}</td>
             <td><button class="icon-btn danger" data-delete-company="${escapeHtml(c.id)}" title="Delete">✕</button></td>
           </tr>`;
       }).join('') : '<tr><td colspan="6" style="color:var(--ink-faint);">No companies yet.</td></tr>';
 
-      if (select.value) renderRoundSettings(companies.find(company => company.id === select.value));
-      else document.getElementById('roundSettingsFields').innerHTML = '';
-
-      const driveCompanySelect = document.getElementById('driveCompanySelect');
-      const selectedDriveCompany = driveCompanySelect.value;
-      const selectedDriveId = document.getElementById('driveSelect').value;
-      driveCompanySelect.innerHTML = companies.map(company =>
-        `<option value="${escapeHtml(company.id)}">${escapeHtml(company.name)}</option>`
-      ).join('') || '<option value="">No companies yet</option>';
-      if (companies.some(company => company.id === selectedDriveCompany)) driveCompanySelect.value = selectedDriveCompany;
-      renderDriveList(companies);
-      loadDriveEditor(companies.find(company => company.id === driveCompanySelect.value), selectedDriveId);
+      if (select.value) renderSelectedCompany(companies.find(company => company.id === select.value));
+      else {
+        document.getElementById('roundSettingsFields').innerHTML = '';
+        document.getElementById('legacyConfigNotice').style.display = 'none';
+      }
 
       document.querySelectorAll('[data-delete-company]').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -262,111 +226,46 @@
     el.style.display = message ? 'block' : 'none';
   }
 
-  function validateRoundSettings(roundSequence) {
-    const errors = [];
-    let enabledCount = 0;
-
-    roundSequence.forEach(round => {
-      const label = ROUND_LABELS[round.round_type];
-      if (round.enabled) {
-        enabledCount += 1;
-        if (!Number.isInteger(round.question_count) || round.question_count <= 0) {
-          errors.push(`${label} Round: enter a positive whole-number question count.`);
-        }
-      } else if (!Number.isInteger(round.question_count) || round.question_count < 0) {
-        errors.push(`${label} Round: question count must be a non-negative whole number.`);
-      }
-      if (!Number.isInteger(round.time_limit_seconds) || round.time_limit_seconds <= 0) {
-        errors.push(`${label} Round: duration must be a positive whole number of seconds.`);
-      }
-
-      const percentages = Object.values(round.difficulty_distribution);
-      if (percentages.some(value => !Number.isInteger(value) || value < 0 || value > 100)) {
-        errors.push(`${label} Round: difficulty percentages must be whole numbers from 0 to 100.`);
-      } else {
-        const total = percentages.reduce((sum, value) => sum + value, 0);
-        if (total !== 0 && total !== 100) {
-          errors.push(`${label} Round: difficulty percentages must total 100%.`);
-        }
-      }
+  function suggestLegacyCounts(spec) {
+    const distribution = spec.difficulty_distribution || {};
+    const totalPercent = ['easy', 'medium', 'hard'].reduce((sum, key) => sum + Number(distribution[key] || 0), 0);
+    if (totalPercent !== 100) return { easy: 0, medium: 0, hard: 0 };
+    const remainders = ['easy', 'medium', 'hard'].map(difficulty => {
+      const exact = spec.question_count * Number(distribution[difficulty] || 0) / 100;
+      return { difficulty, count: Math.floor(exact), remainder: exact - Math.floor(exact) };
     });
-
-    if (enabledCount === 0) errors.unshift('Enable at least one round.');
-    return errors;
+    let remaining = spec.question_count - remainders.reduce((sum, entry) => sum + entry.count, 0);
+    [...remainders].sort((a, b) => b.remainder - a.remainder)
+      .slice(0, remaining).forEach(entry => { entry.count += 1; });
+    return Object.fromEntries(remainders.map(entry => [entry.difficulty, entry.count]));
   }
 
-  function showDriveMessage(message, isError) {
-    const el = document.getElementById('driveMessage');
-    el.textContent = message;
-    el.classList.toggle('error-text', isError);
-    el.classList.toggle('success-text', !isError);
-    el.style.whiteSpace = 'pre-line';
-    el.style.display = message ? 'block' : 'none';
+  function renderSelectedCompany(company) {
+    renderRoundSettings(company);
+    const notice = document.getElementById('legacyConfigNotice');
+    const hasLegacyCounts = company && company.round_sequence.some(round => !round.difficulty_counts);
+    if (company && company.legacy_config) {
+      const sourceStatus = company.legacy_drive_status === 'draft'
+        ? 'The selected legacy configuration was an unpublished draft; saving it will activate the validated single company drive.'
+        : 'The oldest published legacy configuration is being used.';
+      const duplicates = company.legacy_drive_count > 1
+        ? ` ${company.legacy_drive_count} legacy drive records were found and will be retained.`
+        : '';
+      notice.textContent = `This company uses a legacy drive configuration. ${sourceStatus} Percentage values are shown as suggested question counts when possible. Review and save the counts to make them the new single-drive configuration.${duplicates} Historical results are retained.`;
+      notice.style.display = 'block';
+    } else if (company && company.legacy_drive_count > 1) {
+      notice.textContent = `${company.legacy_drive_count} legacy drive records remain for history. The saved company settings are the only configuration shown to students; the legacy records are retained.`;
+      notice.style.display = 'block';
+    } else if (hasLegacyCounts) {
+      notice.textContent = 'This configuration still uses legacy percentages. Review the suggested counts and save to convert it without changing existing records.';
+      notice.style.display = 'block';
+    } else {
+      notice.style.display = 'none';
+    }
   }
 
-  function renderDriveList(companies) {
-    const rows = companies.flatMap(company => (company.drives || []).map(drive => {
-      const find = type => drive.round_sequence.find(round => round.round_type === type && round.enabled !== false);
-      const count = (type, label) => find(type) ? `${find(type).question_count} ${label}` : '—';
-      return `<tr>
-        <td>${escapeHtml(company.name)}</td>
-        <td>${escapeHtml(drive.name)}</td>
-        <td>${escapeHtml(drive.status)}</td>
-        <td>${count('aptitude', 'questions')}</td>
-        <td>${count('coding', 'problems')}</td>
-        <td>${count('theory', 'questions')}</td>
-        <td>
-          <button class="icon-btn" data-edit-drive="${escapeHtml(drive._id)}">Edit</button>
-          <button class="icon-btn danger" data-delete-drive="${escapeHtml(drive._id)}" title="Delete drive">✕</button>
-        </td>
-      </tr>`;
-    }));
-    document.getElementById('drivesBody').innerHTML = rows.length
-      ? rows.join('')
-      : '<tr><td colspan="7" style="color:var(--ink-faint);">No independent drives configured yet.</td></tr>';
-
-    document.querySelectorAll('[data-edit-drive]').forEach(button => {
-      button.addEventListener('click', () => {
-        const company = companies.find(item => (item.drives || []).some(drive => drive._id === button.dataset.editDrive));
-        if (!company) return;
-        document.getElementById('driveCompanySelect').value = company.id;
-        loadDriveEditor(company, button.dataset.editDrive);
-        document.getElementById('driveSelect').value = button.dataset.editDrive;
-        document.getElementById('driveRoundSettingsFields').scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    });
-    document.querySelectorAll('[data-delete-drive]').forEach(button => {
-      button.addEventListener('click', async () => {
-        if (!confirm('Delete this drive? Existing session results will remain in history.')) return;
-        try {
-          await Api.admin.deleteDrive(button.dataset.deleteDrive);
-          await loadPatterns();
-          showDriveMessage('Drive deleted. Existing session results were preserved.', false);
-        } catch (err) {
-          showDriveMessage(err.message, true);
-        }
-      });
-    });
-  }
-
-  function loadDriveEditor(company, selectedDriveId = '') {
-    const driveSelect = document.getElementById('driveSelect');
-    const drives = company ? company.drives || [] : [];
-    driveSelect.innerHTML = '<option value="">Create a new drive</option>' + drives.map(drive =>
-      `<option value="${escapeHtml(drive._id)}">${escapeHtml(drive.name)} (${escapeHtml(drive.status)})</option>`
-    ).join('');
-
-    const drive = drives.find(item => item._id === selectedDriveId) || null;
-    driveSelect.value = drive ? drive._id : '';
-    document.getElementById('driveName').value = drive ? drive.name : '';
-    renderRoundSettings(drive || { round_sequence: [] }, 'driveRoundSettingsFields');
-    document.getElementById('publishDriveBtn').disabled = !drive || drive.status === 'published';
-    document.getElementById('unpublishDriveBtn').disabled = !drive || drive.status !== 'published';
-    document.getElementById('saveDriveBtn').textContent = drive ? 'Save drive settings' : 'Save as draft';
-    showDriveMessage('', false);
-  }
-
-  function renderRoundSettings(company, containerId = 'roundSettingsFields') {
+  function renderRoundSettings(company) {
+    const containerId = 'roundSettingsFields';
     const container = document.getElementById(containerId);
     if (!company) {
       container.innerHTML = '<p class="small-muted">Add a company to configure its rounds.</p>';
@@ -375,7 +274,9 @@
 
     container.innerHTML = ['aptitude', 'coding', 'theory'].map(type => {
       const spec = (company.round_sequence || []).find(round => round.round_type === type);
-      const distribution = spec && spec.difficulty_distribution ? spec.difficulty_distribution : {};
+      const difficultyCounts = spec && spec.difficulty_counts
+        ? spec.difficulty_counts
+        : (spec ? suggestLegacyCounts(spec) : { easy: 0, medium: 0, hard: 0 });
       const topics = spec && Array.isArray(spec.included_topics) ? spec.included_topics.join(', ') : '';
       const durationMinutes = spec ? Math.max(1, Math.ceil((spec.time_limit_seconds || 300) / 60)) : 30;
       return `
@@ -393,21 +294,36 @@
             <input type="text" data-included-topics value="${escapeHtml(topics)}" placeholder="${type === 'aptitude' ? 'quantitative, logical, verbal' : type === 'coding' ? 'array, string, dynamic programming' : 'DBMS, Operating Systems'}">
           </div>
           <div class="difficulty-distribution">
-            <span class="field-label">Difficulty distribution (%)</span>
+            <span class="field-label">Difficulty question counts</span>
             <div class="field-row">
-              <div class="field"><label>Easy</label><input type="number" min="0" max="100" step="1" data-difficulty="easy" value="${distribution.easy || 0}"></div>
-              <div class="field"><label>Medium</label><input type="number" min="0" max="100" step="1" data-difficulty="medium" value="${distribution.medium || 0}"></div>
-              <div class="field"><label>Hard</label><input type="number" min="0" max="100" step="1" data-difficulty="hard" value="${distribution.hard || 0}"></div>
+              <div class="field"><label>Easy</label><input type="number" min="0" step="1" data-difficulty="easy" value="${difficultyCounts.easy || 0}"></div>
+              <div class="field"><label>Medium</label><input type="number" min="0" step="1" data-difficulty="medium" value="${difficultyCounts.medium || 0}"></div>
+              <div class="field"><label>Hard</label><input type="number" min="0" step="1" data-difficulty="hard" value="${difficultyCounts.hard || 0}"></div>
             </div>
+            <p class="small-muted" data-allocation-total>Selected: 0 of ${spec ? spec.question_count : 0} questions</p>
           </div>
         </section>`;
     }).join('');
+
+    container.querySelectorAll('[data-round-config]').forEach(section => {
+      const updateTotal = () => {
+        const questionCount = Number(section.querySelector('[data-question-count]').value) || 0;
+        const selected = ['easy', 'medium', 'hard'].reduce((sum, difficulty) => (
+          sum + (Number(section.querySelector(`[data-difficulty="${difficulty}"]`).value) || 0)
+        ), 0);
+        section.querySelector('[data-allocation-total]').textContent = `Selected: ${selected} of ${questionCount} questions`;
+      };
+      section.querySelectorAll('[data-question-count], [data-difficulty]').forEach(input => {
+        input.addEventListener('input', updateTotal);
+      });
+      updateTotal();
+    });
   }
 
   document.getElementById('patternCompanySelect').addEventListener('change', async event => {
     try {
       const companies = await Api.admin.listCompanies();
-      renderRoundSettings(companies.find(company => company.id === event.target.value));
+      renderSelectedCompany(companies.find(company => company.id === event.target.value));
       showPatternMessage('', false);
     } catch (err) {
       showPatternMessage(err.message, true);
@@ -471,7 +387,7 @@
         question_count: readNumber('[data-question-count]'),
         time_limit_seconds: readNumber('[data-duration-minutes]') * 60,
         included_topics: includedTopics,
-        difficulty_distribution: {
+        difficulty_counts: {
           easy: readNumber('[data-difficulty="easy"]'),
           medium: readNumber('[data-difficulty="medium"]'),
           hard: readNumber('[data-difficulty="hard"]'),
@@ -479,74 +395,6 @@
       };
     });
   }
-
-  document.getElementById('driveCompanySelect').addEventListener('change', async event => {
-    try {
-      const companies = await Api.admin.listCompanies();
-      loadDriveEditor(companies.find(company => company.id === event.target.value));
-    } catch (err) {
-      showDriveMessage(err.message, true);
-    }
-  });
-
-  document.getElementById('driveSelect').addEventListener('change', async event => {
-    try {
-      const companies = await Api.admin.listCompanies();
-      const company = companies.find(item => item.id === document.getElementById('driveCompanySelect').value);
-      loadDriveEditor(company, event.target.value);
-    } catch (err) {
-      showDriveMessage(err.message, true);
-    }
-  });
-
-  document.getElementById('newDriveBtn').addEventListener('click', () => {
-    loadDriveEditor({ drives: [] });
-  });
-
-  document.getElementById('saveDriveBtn').addEventListener('click', async () => {
-    const companyId = document.getElementById('driveCompanySelect').value;
-    const driveId = document.getElementById('driveSelect').value;
-    const name = document.getElementById('driveName').value.trim();
-    if (!companyId) {
-      showDriveMessage('Select a company before saving a drive.', true);
-      return;
-    }
-    const roundSequence = readRoundSequence('driveRoundSettingsFields');
-    const configurationErrors = validateRoundSettings(roundSequence);
-    if (configurationErrors.length) {
-      showDriveMessage(configurationErrors.join('\n'), true);
-      return;
-    }
-    try {
-      const saved = driveId
-        ? await Api.admin.updateDrive(driveId, { name, round_sequence: roundSequence })
-        : await Api.admin.createDrive(companyId, { name, round_sequence: roundSequence });
-      await loadPatterns();
-      document.getElementById('driveSelect').value = saved._id;
-      const companies = await Api.admin.listCompanies();
-      const company = companies.find(item => item.id === companyId);
-      loadDriveEditor(company, saved._id);
-      showDriveMessage('Drive settings saved as a draft. Publish after resolving any allocation errors.', false);
-    } catch (err) {
-      showDriveMessage(err.message, true);
-    }
-  });
-
-  async function setDriveStatus(status) {
-    const driveId = document.getElementById('driveSelect').value;
-    if (!driveId) return;
-    try {
-      await Api.admin.updateDriveStatus(driveId, status);
-      await loadPatterns();
-      document.getElementById('driveSelect').value = driveId;
-      showDriveMessage(status === 'published' ? 'Drive published and visible to students.' : 'Drive unpublished and hidden from students.', false);
-    } catch (err) {
-      showDriveMessage(err.message, true);
-    }
-  }
-
-  document.getElementById('publishDriveBtn').addEventListener('click', () => setDriveStatus('published'));
-  document.getElementById('unpublishDriveBtn').addEventListener('click', () => setDriveStatus('draft'));
 
   function onAdminTabChange(tab) {
     if (tab === 'aptitude') loadAptitude();

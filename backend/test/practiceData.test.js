@@ -5,7 +5,9 @@ const {
   APTITUDE_QUESTIONS,
   THEORY_QUESTIONS,
   CODING_QUESTIONS,
+  ROUND_CONFIG,
 } = require("../seed/practiceData");
+const { validateRoundSequence } = require("../utils/companyPattern");
 
 test("practice seed prepares six requested companies without replacing existing data", () => {
   assert.deepEqual(COMPANIES.map(([name]) => name), [
@@ -46,4 +48,13 @@ test("theory fixtures cover each requested computing subject", () => {
   ]) {
     assert.ok(subjects.has(subject), `Missing theory subject ${subject}`);
   }
+});
+
+test("seed drive configuration defines one exact difficulty count allocation per round", () => {
+  assert.equal(validateRoundSequence(ROUND_CONFIG, { allowLegacy: false }), null);
+  assert.deepEqual(ROUND_CONFIG.map((round) => round.difficulty_counts), [
+    { easy: 4, medium: 4, hard: 2 },
+    { easy: 4, medium: 6, hard: 0 },
+    { easy: 3, medium: 2, hard: 0 },
+  ]);
 });
