@@ -1,7 +1,9 @@
 const CompanyQuestionAssignment = require("../models/CompanyQuestionAssignment");
 
-async function getCompanyQuestionIds(companyId) {
-  const assignments = await CompanyQuestionAssignment.find({ company: companyId }).select("round_type question").lean();
+async function getCompanyQuestionIds(companyId, session) {
+  let query = CompanyQuestionAssignment.find({ company: companyId }).select("round_type question");
+  if (session) query = query.session(session);
+  const assignments = await query.lean();
   if (!assignments.length) return {};
 
   const questionIdsByType = {};

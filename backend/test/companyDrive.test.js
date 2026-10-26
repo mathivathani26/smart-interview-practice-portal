@@ -187,7 +187,7 @@ test("student coding round receives two configured questions and their safe test
     userId: "student-id",
   }, nextQuestionResponse);
 
-  assert.equal(nextQuestionResponse.statusCode, 200);
+  assert.equal(nextQuestionResponse.statusCode, 200, JSON.stringify(nextQuestionResponse.body));
   const firstAssignedQuestion = questions.find(
     (question) => question._id === assignedIds[0]
   );
@@ -199,6 +199,39 @@ test("student coding round receives two configured questions and their safe test
       testCase.hidden ? { hidden: true } : testCase
     ))
   );
+});
+
+test("student retrieval rejects a coding question whose difficulty or tags changed after assignment", async (t) => {
+  const session = {
+    _id: "session-id",
+    mode: "mock_drive",
+    completed_at: null,
+    drive_rounds: [{
+      round_type: "coding",
+      question_ids: ["question-id"],
+      difficulty_counts: { easy: 1, medium: 0, hard: 0 },
+      included_topics: ["array"],
+    }],
+  };
+  t.mock.method(Session, "findOne", async () => session);
+  t.mock.method(RoundAttempt, "countDocuments", async () => 0);
+  t.mock.method(CodingQuestion, "findById", async () => ({
+    difficulty: "Easy",
+    tags: ["graph"],
+    toObject() {
+      return { difficulty: this.difficulty, tags: this.tags };
+    },
+  }));
+
+  const response = createResponse();
+  await routeHandler(sessionsRouter, "get", "/:id/next-question")({
+    params: { id: "session-id" },
+    query: { roundType: "coding", questionIndex: "0" },
+    userId: "student-id",
+  }, response);
+
+  assert.equal(response.statusCode, 409);
+  assert.match(response.body.message, /no longer matches its configured difficulty or tags/);
 });
 
 test("legacy driveId selection is rejected instead of exposing duplicate drive choices", async () => {

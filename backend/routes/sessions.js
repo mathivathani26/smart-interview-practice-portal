@@ -16,6 +16,7 @@ const { detectApproachTags } = require("../utils/approachDetector");
 const {
   assignQuestions,
   getConfiguredDifficultyCounts,
+  matchesRoundTopics,
   validateRoundSequence,
   validateRoundAvailability,
 } = require("../utils/companyPattern");
@@ -188,6 +189,18 @@ router.get("/:id/next-question", requireAuth, async (req, res) => {
       const question = await Bank.findById(questionId);
       if (!question) return res.status(409).json({ message: "A question assigned to this drive is no longer available. Please start a new drive." });
       const q = question.toObject();
+      if (roundType === "coding") {
+        const difficultyCounts = getConfiguredDifficultyCounts(round);
+        const difficulty = String(q.difficulty || "").toLowerCase();
+        if (
+          (difficultyCounts && !difficultyCounts[difficulty])
+          || !matchesRoundTopics(q, round, roundType)
+        ) {
+          return res.status(409).json({
+            message: "A coding question assigned to this drive no longer matches its configured difficulty or tags. Please start a new drive after an admin reviews the round settings.",
+          });
+        }
+      }
       if (roundType === "aptitude") {
         delete q.correct_option;
         delete q.correct_options;

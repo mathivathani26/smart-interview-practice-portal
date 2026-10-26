@@ -4,6 +4,7 @@ const Company = require("../models/Company");
 const CompanyPattern = require("../models/CompanyPattern");
 const CompanyQuestionAssignment = require("../models/CompanyQuestionAssignment");
 const CodingQuestion = require("../models/CodingQuestion");
+const { getCompanyQuestionIds } = require("../utils/companyQuestionAssignments");
 const adminRouter = require("../routes/admin");
 const {
   assignQuestions,
@@ -189,12 +190,62 @@ test("explains when company assignment IDs exclude matching bank questions and i
     coding: questionBank(questions),
   }, "Test Co", { coding: ["stale-id"] });
 
-  assert.equal(errors.length, 1);
-  assert.match(errors[0], /excluded by this company's coding round question assignments/);
-  assert.match(errors[0], /Two Sum \(_id:/);
-  assert.match(errors[0], /Valid Parentheses/);
+  const errorText = errors.join("\n");
+  assert.equal(errors.length, 2);
+  assert.match(errorText, /excluded by this company's coding round question assignments/);
+  assert.match(errorText, /Two Sum \(_id:/);
+  assert.match(errorText, /Valid Parentheses/);
+  assert.match(errorText, /stale-id/);
+  assert.match(errorText, /Remove the stale assignment rows or replace them/);
+});
+
+test("reports stale and duplicate assignment references even when enough eligible questions remain", async () => {
+  const errors = await validateRoundAvailability([countRound({
+    question_count: 1,
+    included_topics: ["array"],
+    difficulty_counts: { easy: 1, medium: 0, hard: 0 },
+  })], {
+    coding: questionBank([
+      { _id: "valid-id", tags: ["array"], difficulty: "Easy" },
+    ]),
+  }, "Test Co", { coding: ["valid-id", "stale-id", "valid-id"] });
+
+  assert.equal(errors.length, 2);
   assert.match(errors[0], /stale-id/);
-  assert.match(errors[0], /current MongoDB _id values/);
+  assert.match(errors[1], /duplicate question assignment reference\(s\).*valid-id/);
+  assert.doesNotMatch(errors.join("\n"), /requires 1 Easy question/);
+});
+
+test("reports assigned coding questions excluded by edited tags", async () => {
+  const errors = await validateRoundAvailability([countRound({
+    question_count: 1,
+    included_topics: ["array"],
+    difficulty_counts: { easy: 1, medium: 0, hard: 0 },
+  })], {
+    coding: questionBank([
+      { _id: "edited-question", title: "Edited question", tags: ["graph"], difficulty: "Easy" },
+    ]),
+  }, "Test Co", { coding: ["edited-question"] });
+
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /do not match the configured topic\(s\): array/);
+  assert.match(errors[0], /tags: graph/);
+});
+
+test("company coding assignments remain isolated between companies", async (t) => {
+  const assignmentRows = [
+    { company: "company-a", round_type: "coding", question: "a-question" },
+    { company: "company-b", round_type: "coding", question: "b-question" },
+  ];
+  t.mock.method(CompanyQuestionAssignment, "find", (filter) => ({
+    select() { return this; },
+    lean: async () => assignmentRows.filter(
+      (assignment) => assignment.company === filter.company
+    ),
+  }));
+
+  assert.deepEqual(await getCompanyQuestionIds("company-a"), { coding: ["a-question"] });
+  assert.deepEqual(await getCompanyQuestionIds("company-b"), { coding: ["b-question"] });
 });
 
 test("Admin cannot publish a round with an insufficient eligible question inventory", async (t) => {
@@ -229,6 +280,38 @@ test("Admin cannot publish a round with an insufficient eligible question invent
 
   assert.equal(response.statusCode, 400);
   assert.match(response.body.message, /requires 2 Medium questions, but only 1 eligible question is available/);
+  assert.equal(saved, false);
+});
+
+test("Admin cannot save a configuration with missing coding assignment references", async (t) => {
+  const company = { _id: "company-id", name: "Test Co" };
+  const roundSequence = [countRound({
+    question_count: 1,
+    difficulty_counts: { easy: 1, medium: 0, hard: 0 },
+  })];
+  let saved = false;
+  t.mock.method(Company, "findById", async () => company);
+  t.mock.method(CompanyQuestionAssignment, "find", () => ({
+    select() { return this; },
+    lean: async () => [{ round_type: "coding", question: "missing-question-id" }],
+  }));
+  const bank = questionBank([
+    { _id: "valid-question", title: "Valid", tags: ["array"], difficulty: "Easy" },
+  ]);
+  t.mock.method(CodingQuestion, "find", bank.find.bind(bank));
+  t.mock.method(CompanyPattern, "findOneAndUpdate", async () => {
+    saved = true;
+    return {};
+  });
+
+  const response = createResponse();
+  await handlerFor("put", "/companies/:id/pattern")({
+    params: { id: company._id },
+    body: { round_sequence: roundSequence },
+  }, response);
+
+  assert.equal(response.statusCode, 400);
+  assert.match(response.body.message, /missing-question-id/);
   assert.equal(saved, false);
 });
 

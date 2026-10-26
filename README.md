@@ -48,6 +48,24 @@ Run the backend checks from `backend` with:
 npm test
 ```
 
+### Checking stale company question assignments
+
+From `backend`, run `node scripts/repairCompanyQuestionAssignments.js` for a
+read-only diagnosis of missing Coding Question assignment references. The
+report includes the company, affected assignment record IDs, active coding
+round rules, eligible replacements, and any unresolved per-difficulty
+shortages. It does not change records.
+
+Only after reviewing and approving that exact report, run the same script with
+`--apply`. It rechecks the database in a transaction, backs up each affected
+assignment record in `companyquestionassignmentrepairbackups`, and then
+replaces a stale reference only with a distinct question from the Coding
+Question bank that satisfies the company's configured difficulty and tags.
+When an obsolete row is not needed and there is no shortage, the script removes
+that row after backing it up. Unresolved shortages and duplicate rows are left
+untouched. Apply mode requires MongoDB transaction support and aborts if the
+diagnosis changed after review. Re-running either mode is safe.
+
 ## 3. Try it out
 
 - Sign in with an existing account or register a student account through the regular login form.

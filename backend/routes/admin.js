@@ -11,6 +11,7 @@ const requireAdmin = require("../middleware/adminOnly");
 const { validateRoundSequence, validateRoundAvailability } = require("../utils/companyPattern");
 const { selectCanonicalDriveConfig } = require("../utils/canonicalDriveConfig");
 const { normalizeTags } = require("../utils/codingTags");
+const CompanyQuestionAssignment = require("../models/CompanyQuestionAssignment");
 
 const router = express.Router();
 router.use(requireAuth, requireAdmin);
@@ -24,6 +25,61 @@ const QUESTION_BANKS = {
 async function getAllocationErrors(roundSequence, companyName, companyId) {
   const questionIdsByType = companyId ? await getCompanyQuestionIds(companyId) : {};
   return validateRoundAvailability(roundSequence, QUESTION_BANKS, companyName, questionIdsByType);
+}
+
+async function getCodingAssignmentErrors(
+  questionId,
+  { excludeQuestion = false, session, questionOverride } = {}
+) {
+  let assignmentQuery = CompanyQuestionAssignment.find({
+    round_type: "coding",
+    question: questionId,
+  }).select("company");
+  if (session) assignmentQuery = assignmentQuery.session(session);
+  const assignments = await assignmentQuery.lean();
+  const companyIds = [...new Set(assignments.map((assignment) => String(assignment.company)))];
+  const errors = [];
+
+  for (const companyId of companyIds) {
+    let companyQuery = Company.findById(companyId);
+    let patternQuery = CompanyPattern.findOne({ company: companyId });
+    let drivesQuery = MockDrive.find({ company: companyId }).sort({ createdAt: 1, _id: 1 });
+    if (session) {
+      companyQuery = companyQuery.session(session);
+      patternQuery = patternQuery.session(session);
+      drivesQuery = drivesQuery.session(session);
+    }
+    const [company, pattern, drives] = await Promise.all([
+      companyQuery,
+      patternQuery.lean(),
+      drivesQuery.lean(),
+    ]);
+    if (!company) {
+      errors.push(`Coding question ${questionId} is assigned to a missing company record (${companyId}).`);
+      continue;
+    }
+    const config = selectCanonicalDriveConfig(pattern, drives, { includeDraft: true });
+    const codingRounds = config.round_sequence.filter(
+      (round) => round.round_type === "coding" && round.enabled !== false
+    );
+    if (!codingRounds.length) continue;
+
+    const questionIdsByType = await getCompanyQuestionIds(company._id, session);
+    if (excludeQuestion) {
+      questionIdsByType.coding = (questionIdsByType.coding || [])
+        .filter((id) => String(id) !== String(questionId));
+    }
+    errors.push(...await validateRoundAvailability(
+      codingRounds,
+      { coding: CodingQuestion },
+      company.name,
+      questionIdsByType,
+      session,
+      questionOverride
+    ));
+  }
+
+  return errors;
 }
 
 function crudFor(path, Model) {
@@ -41,9 +97,45 @@ function crudFor(path, Model) {
   });
   router.put(`/${path}/:id`, async (req, res) => {
     try {
+      const payload = normalizeQuestionPayload(Model, req.body);
+      if (
+        Model === CodingQuestion
+        && (Object.prototype.hasOwnProperty.call(payload, "difficulty")
+          || Object.prototype.hasOwnProperty.call(payload, "tags"))
+      ) {
+        const assigned = await CompanyQuestionAssignment.find({
+          round_type: "coding",
+          question: req.params.id,
+        }).select("_id").lean();
+        if (assigned.length) {
+          const current = await Model.findById(req.params.id);
+          if (!current) return res.status(404).json({ message: "Not found" });
+          const questionOverride = {
+            ...current.toObject(),
+            ...payload,
+            _id: current._id,
+          };
+          const errors = await getCodingAssignmentErrors(current._id, { questionOverride });
+          if (errors.length) {
+            return res.status(409).json({ message: errors.join("\n"), errors });
+          }
+          const filter = current.updatedAt
+            ? { _id: req.params.id, updatedAt: current.updatedAt }
+            : { _id: req.params.id };
+          const item = await Model.findOneAndUpdate(
+            filter,
+            payload,
+            { new: true, runValidators: true }
+          );
+          if (!item) {
+            return res.status(409).json({ message: "The coding question changed during validation. Reload it and try again." });
+          }
+          return res.json(item);
+        }
+      }
       const item = await Model.findByIdAndUpdate(
         req.params.id,
-        normalizeQuestionPayload(Model, req.body),
+        payload,
         { new: true, runValidators: true }
       );
       if (!item) return res.status(404).json({ message: "Not found" });
@@ -53,8 +145,34 @@ function crudFor(path, Model) {
     }
   });
   router.delete(`/${path}/:id`, async (req, res) => {
+    if (Model === CodingQuestion) {
+      const errors = await getCodingAssignmentErrors(req.params.id, { excludeQuestion: true });
+      if (errors.length) {
+        return res.status(409).json({
+          message: `Cannot delete this coding question because the change would make a configured company round invalid:\n${errors.join("\n")}`,
+          errors,
+        });
+      }
+    }
     const item = await Model.findByIdAndDelete(req.params.id);
     if (!item) return res.status(404).json({ message: "Not found" });
+    if (Model === CodingQuestion) {
+      try {
+        await CompanyQuestionAssignment.deleteMany({
+          round_type: "coding",
+          question: item._id,
+        });
+      } catch (err) {
+        console.error(
+          "Coding question deleted but its company assignment references could not be cleaned up:",
+          err.name,
+          err.code || ""
+        );
+        return res.status(500).json({
+          message: "Coding question was deleted, but assignment cleanup failed. Review company coding assignments before publishing a round.",
+        });
+      }
+    }
     res.json({ deleted: true });
   });
 }
