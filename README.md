@@ -63,14 +63,14 @@ npm test
 Submitted code is evaluated for real, using one of three methods, tried in this order:
 
 1. **Real Judge0 API** — if you set `RAPIDAPI_KEY` in `.env`, every language runs on Judge0's real compilers/interpreters.
-2. **Real local execution** (development only, no setup needed) — when `RAPIDAPI_KEY` is absent and `NODE_ENV` is not `production`, the backend can run submitted code directly using supported local interpreters.
+2. **Real local execution** (development only, no setup needed) — when `RAPIDAPI_KEY` is absent and `NODE_ENV=development`, the backend can run submitted code directly using supported local interpreters.
 
-In production, code submissions are sent to Judge0 only when `RAPIDAPI_KEY` is configured. If neither Judge0 nor a supported local interpreter is available, the request fails explicitly and no score is saved; the backend never invents simulated test results.
+Outside explicit development mode, code submissions are sent to Judge0 only when `RAPIDAPI_KEY` is configured. If neither Judge0 nor a supported local interpreter is available, the request fails explicitly and no score is saved; the backend never invents simulated test results.
 Compilation errors are recorded as zero-score test results with their verdicts. If the execution service itself fails, the API returns an error and does not save a score.
 
 ### A safety note on real local execution
 
-Running submitted code directly on the development machine is intended only for local practice. It is **not** a sandboxed, multi-tenant judge. Public deployments must use Judge0 for code execution; the production-mode guard disables code execution when Judge0 is not configured rather than falling back to local execution.
+Running submitted code directly on the development machine is intended only for local practice. It is **not** a sandboxed, multi-tenant judge. Local execution is enabled only when `NODE_ENV=development`; public deployments must use Judge0, and any other mode disables code execution when Judge0 is not configured rather than falling back to local execution.
 
 **To enable real code execution:**
 1. Create a RapidAPI account, subscribe to the existing [Judge0 CE API](https://rapidapi.com/judge0-official/api/judge0-ce), and obtain its key.
@@ -103,7 +103,7 @@ The frontend supports **Python 3** (Judge0 71), **C** (50), **C++** (54), **Java
 ### How the Coding round actually decides what to run (in order)
 
 1. **Judge0** — if `RAPIDAPI_KEY` is set in `.env`, every language goes through the real Judge0 API.
-2. **Local execution** — if no Judge0 key, the backend runs the code for real, directly on your machine (`backend/utils/localRunner.js`):
+2. **Local execution** — only when `NODE_ENV=development` and no Judge0 key is configured, the backend runs code directly on your machine (`backend/utils/localRunner.js`):
    - **Python** — via a local `python3`/`python` interpreter
    - **JavaScript** — via the same Node.js process already running the server
    - **C++** — compiled with `g++` and executed as a real binary
@@ -118,7 +118,7 @@ This is genuine execution, not simulation: wrong code fails and correct code pas
 
 **System requirements for local execution without Judge0:** Python 3 is required for Python; Node.js runs JavaScript; C++ requires `g++`; Java requires a JDK 11+; C requires a configured Judge0 key. If an interpreter/compiler is unavailable, execution fails clearly and no score is saved.
 
-**Safety note:** local execution runs submitted code directly on your machine with a 5-second timeout. This is intended for single-user local practice (you running your own code on your own computer), not a sandboxed, multi-tenant-safe judge — don't expose this backend on a shared or public server without adding real sandboxing (containers, resource limits, etc.).
+**Safety note:** local execution runs submitted code directly on your machine with a 5-second timeout. It is enabled only with `NODE_ENV=development` and is intended for single-user local practice (you running your own code on your own computer), not a sandboxed, multi-tenant-safe judge — don't expose this backend on a shared or public server without adding real sandboxing (containers, resource limits, etc.).
 
 ### A note on approach-tag detection
 

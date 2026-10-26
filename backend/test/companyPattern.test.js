@@ -1,5 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const Company = require("../models/Company");
+const CompanyPattern = require("../models/CompanyPattern");
+const CompanyQuestionAssignment = require("../models/CompanyQuestionAssignment");
+const CodingQuestion = require("../models/CodingQuestion");
+const adminRouter = require("../routes/admin");
 const {
   assignQuestions,
   getConfiguredDifficultyCounts,
@@ -32,6 +37,26 @@ function questionBank(questions) {
   };
 }
 
+function handlerFor(method, path) {
+  const layer = adminRouter.stack.find((item) => item.route && item.route.path === path && item.route.methods[method]);
+  return layer.route.stack[layer.route.stack.length - 1].handle;
+}
+
+function createResponse() {
+  return {
+    statusCode: 200,
+    body: null,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json(body) {
+      this.body = body;
+      return this;
+    },
+  };
+}
+
 function countRound(overrides = {}) {
   return {
     round_type: "coding",
@@ -56,6 +81,23 @@ test("validates exact non-negative integer difficulty counts and one round per t
   assert.match(validateRoundSequence([countRound({ difficulty_counts: { easy: 1, medium: 2 } })], { allowLegacy: false }), /non-negative whole numbers/);
   assert.match(validateRoundSequence([countRound(), countRound()]), /Only one coding round/);
   assert.match(validateRoundSequence([{ ...countRound(), enabled: false }, { ...countRound({ round_type: "aptitude" }), enabled: false }]), /Enable at least one round/);
+});
+
+test("rejects active rounds without a complete difficulty allocation", () => {
+  assert.match(
+    validateRoundSequence([countRound({
+      difficulty_counts: undefined,
+      difficulty_distribution: undefined,
+    })]),
+    /set Easy, Medium, and Hard question counts/
+  );
+  assert.match(
+    validateRoundSequence([countRound({
+      difficulty_counts: undefined,
+      difficulty_distribution: { easy: 0, medium: 0, hard: 0 },
+    })]),
+    /legacy difficulty percentages must total 100/
+  );
 });
 
 test("legacy percentages remain explicitly legacy and convert deterministically without rewriting them", () => {
@@ -87,6 +129,23 @@ test("assigns exact counts from eligible, company-assigned topics without duplic
   assert.deepEqual(assigned.sort(), ["e1", "h1", "m1"]);
 });
 
+test("assigns exactly two eligible Medium questions for Two Sum and Valid Parentheses topics", async () => {
+  const assigned = await assignQuestions(questionBank([
+    { _id: "two-sum-id", title: "Two Sum", tags: ["array", "hashing"], difficulty: "Medium" },
+    { _id: "valid-parentheses-id", title: "Valid Parentheses", tags: ["stack", "string"], difficulty: "Medium" },
+    { _id: "unrelated-id", title: "Graph Traversal", tags: ["graph"], difficulty: "Medium" },
+    { _id: "wrong-difficulty-id", title: "Easy Array", tags: ["array"], difficulty: "Easy" },
+  ]), countRound({
+    question_count: 2,
+    included_topics: ["ARRAYS", "hashing", "STACK", "strings"],
+    difficulty_counts: { easy: 0, medium: 2, hard: 0 },
+  }), "Test Co");
+
+  assert.equal(assigned.length, 2);
+  assert.equal(new Set(assigned).size, 2);
+  assert.deepEqual(assigned.sort(), ["two-sum-id", "valid-parentheses-id"]);
+});
+
 test("coding tag matching normalizes whitespace, case, and common plurals with OR semantics", async () => {
   assert.deepEqual(normalizeTags([" Arrays ", "ARRAY", " binary   search ", "strings", "string"]), ["array", "binary search", "string"]);
   const questions = [
@@ -115,6 +174,62 @@ test("reports insufficient matching questions instead of falling back to unrelat
     ]), round, "Test Co"),
     /Test Co Coding round requires 2 Easy questions, but only 0 eligible questions are available/
   );
+});
+
+test("explains when company assignment IDs exclude matching bank questions and identifies stale IDs", async () => {
+  const questions = [
+    { _id: "two-sum-current-id", title: "Two Sum", tags: ["array", "hashing"], difficulty: "Medium" },
+    { _id: "parentheses-current-id", title: "Valid Parentheses", tags: ["stack", "string"], difficulty: "Medium" },
+  ];
+  const errors = await validateRoundAvailability([countRound({
+    question_count: 2,
+    included_topics: ["array", "stack"],
+    difficulty_counts: { easy: 0, medium: 2, hard: 0 },
+  })], {
+    coding: questionBank(questions),
+  }, "Test Co", { coding: ["stale-id"] });
+
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /excluded by this company's coding round question assignments/);
+  assert.match(errors[0], /Two Sum \(_id:/);
+  assert.match(errors[0], /Valid Parentheses/);
+  assert.match(errors[0], /stale-id/);
+  assert.match(errors[0], /current MongoDB _id values/);
+});
+
+test("Admin cannot publish a round with an insufficient eligible question inventory", async (t) => {
+  const company = { _id: "company-id", name: "Test Co" };
+  const roundSequence = [countRound({
+    question_count: 2,
+    included_topics: ["array"],
+    difficulty_counts: { easy: 0, medium: 2, hard: 0 },
+  })];
+  let saved = false;
+  t.mock.method(Company, "findById", async () => company);
+  t.mock.method(CompanyQuestionAssignment, "find", () => ({
+    select() { return this; },
+    lean: async () => [],
+  }));
+  t.mock.method(CodingQuestion, "find", () => ({
+    select() { return this; },
+    lean: async () => [
+      { _id: "one-medium", title: "One Medium", tags: ["array"], difficulty: "Medium" },
+    ],
+  }));
+  t.mock.method(CompanyPattern, "findOneAndUpdate", async () => {
+    saved = true;
+    return {};
+  });
+
+  const response = createResponse();
+  await handlerFor("put", "/companies/:id/pattern")({
+    params: { id: company._id },
+    body: { round_sequence: roundSequence },
+  }, response);
+
+  assert.equal(response.statusCode, 400);
+  assert.match(response.body.message, /requires 2 Medium questions, but only 1 eligible question is available/);
+  assert.equal(saved, false);
 });
 
 test("validates eligible question inventory by exact difficulty and reports shortage", async () => {

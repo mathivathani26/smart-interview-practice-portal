@@ -93,7 +93,6 @@ function validateRoundSequence(roundSequence, { allowLegacy = true } = {}) {
     }
 
     const distribution = round.difficulty_distribution;
-    if (!distribution && allowLegacy) continue;
     if (!distribution || typeof distribution !== "object") {
       return `${round.round_type}: set Easy, Medium, and Hard question counts.`;
     }
@@ -102,7 +101,7 @@ function validateRoundSequence(roundSequence, { allowLegacy = true } = {}) {
       return `${round.round_type}: legacy difficulty percentages must be whole numbers from 0 to 100. Review and save this round using question counts.`;
     }
     const total = values.reduce((sum, value) => sum + value, 0);
-    if (total !== 0 && total !== 100) {
+    if (total !== 100) {
       return `${round.round_type}: legacy difficulty percentages must total 100. Review and save this round using question counts.`;
     }
   }
@@ -125,7 +124,7 @@ function baseRoundFilter(round, roundType, difficulty, questionIds) {
   if (round.category && roundType !== "coding") {
     filters.push({ [roundType === "theory" ? "subject" : "category"]: round.category });
   }
-  if (round.difficulty) filters.push({ difficulty: round.difficulty });
+  if (round.difficulty && !difficulty) filters.push({ difficulty: round.difficulty });
   if (difficulty) filters.push({ difficulty: difficulty[0].toUpperCase() + difficulty.slice(1) });
   return filters.length > 1 ? { $and: filters } : filters[0] || {};
 }
@@ -144,7 +143,7 @@ function matchesRoundTopics(question, round, roundType) {
 
 async function findEligibleQuestions(Bank, round, difficulty, questionIds) {
   const candidates = await Bank.find(baseRoundFilter(round, round.round_type, difficulty, questionIds))
-    .select("_id difficulty category subject tags")
+    .select("_id title question_text difficulty category subject tags")
     .lean();
   return candidates.filter((question) => matchesRoundTopics(question, round, round.round_type));
 }
@@ -158,6 +157,59 @@ function shortageMessage(companyName, roundType, required, available, difficulty
   return `${companyName} ${roundName} round requires ${required}${difficultyLabel} question${required === 1 ? "" : "s"}, but only ${available} eligible question${available === 1 ? " is" : "s are"} available. Add ${needed} question${needed === 1 ? "" : "s"} or reduce the configured count.`;
 }
 
+async function explainShortage(Bank, round, companyName, required, available, difficulty, questionIds) {
+  const message = shortageMessage(companyName, round.round_type, required, available, difficulty);
+  const details = [];
+  const matchingWithoutAssignmentFilter = Array.isArray(questionIds)
+    ? await findEligibleQuestions(Bank, round, difficulty, undefined)
+    : null;
+
+  if (matchingWithoutAssignmentFilter && matchingWithoutAssignmentFilter.length > available) {
+    const assignedIds = new Set(questionIds.map(String));
+    const excluded = matchingWithoutAssignmentFilter.filter(
+      (question) => !assignedIds.has(String(question._id))
+    );
+    const bankName = `${round.round_type.charAt(0).toUpperCase()}${round.round_type.slice(1)} Question`;
+    const roundName = `${round.round_type} round`;
+    const examples = excluded.slice(0, 10).map((question) => (
+      `${question.title || question.question_text || "Untitled question"} (_id: ${question._id})`
+    ));
+    const remainder = excluded.length > examples.length
+      ? `, and ${excluded.length - examples.length} more`
+      : "";
+    details.push(
+      `${excluded.length} question(s) in the ${bankName} bank match this difficulty and topic selection but are excluded by this company's ${roundName} question assignments: ${examples.join(", ")}${remainder}. Add the exact MongoDB _id(s) to this company's ${roundName} assignments, or remove obsolete/restrictive assignment rows.`
+    );
+
+    const existingAssigned = await Bank.find({ _id: { $in: questionIds } })
+      .select("_id")
+      .lean();
+    const existingIds = new Set(existingAssigned.map((question) => String(question._id)));
+    const staleIds = [...new Set(questionIds.map(String))].filter((id) => !existingIds.has(id));
+    if (staleIds.length) {
+      details.push(
+        `These assigned ${roundName} question ID(s) do not exist in the ${bankName} bank: ${staleIds.join(", ")}. Replace them with the question records' current MongoDB _id values.`
+      );
+    }
+  }
+
+  const candidatesWithoutTopicFilter = await Bank.find(
+    baseRoundFilter(round, round.round_type, difficulty, questionIds)
+  ).select("_id title question_text difficulty category subject tags").lean();
+  const topicMatches = candidatesWithoutTopicFilter.filter(
+    (question) => matchesRoundTopics(question, round, round.round_type)
+  );
+  if (candidatesWithoutTopicFilter.length > 0 && topicMatches.length === 0) {
+    const topics = [...(round.included_topics || []), ...(round.category ? [round.category] : [])];
+    const requested = topics.length ? topics.join(", ") : "any topic";
+    details.push(
+      `There are ${candidatesWithoutTopicFilter.length} ${difficulty ? `${difficulty} ` : ""}${round.round_type} question(s) in the selected bank, but none match the configured topic(s): ${requested}. Add at least one matching tag to a coding question or correct the included topics. Coding topics use OR matching.`
+    );
+  }
+
+  return details.length ? `${message} ${details.join(" ")}` : message;
+}
+
 async function assignQuestions(Bank, round, companyName, questionIds) {
   const selected = [];
   const difficultyCounts = getConfiguredDifficultyCounts(round);
@@ -168,14 +220,18 @@ async function assignQuestions(Bank, round, companyName, questionIds) {
       if (count === 0) continue;
       const candidates = await findEligibleQuestions(Bank, round, difficulty, questionIds);
       if (candidates.length < count) {
-        throw new Error(shortageMessage(companyName, round.round_type, count, candidates.length, difficulty));
+        throw new Error(await explainShortage(
+          Bank, round, companyName, count, candidates.length, difficulty, questionIds
+        ));
       }
       selected.push(...shuffle(candidates).slice(0, count).map((question) => question._id));
     }
   } else {
     const candidates = await findEligibleQuestions(Bank, round, null, questionIds);
     if (candidates.length < round.question_count) {
-      throw new Error(shortageMessage(companyName, round.round_type, round.question_count, candidates.length));
+      throw new Error(await explainShortage(
+        Bank, round, companyName, round.question_count, candidates.length, null, questionIds
+      ));
     }
     selected.push(...shuffle(candidates).slice(0, round.question_count).map((question) => question._id));
   }
@@ -202,7 +258,15 @@ async function validateRoundAvailability(roundSequence, banks, companyName, ques
           Bank, round, difficulty, questionIdsByType[round.round_type]
         )).length;
         if (available < required) {
-          errors.push(shortageMessage(companyName, round.round_type, required, available, difficulty));
+          errors.push(await explainShortage(
+            Bank,
+            round,
+            companyName,
+            required,
+            available,
+            difficulty,
+            questionIdsByType[round.round_type]
+          ));
         }
       }
     } else {
@@ -210,7 +274,15 @@ async function validateRoundAvailability(roundSequence, banks, companyName, ques
         Bank, round, null, questionIdsByType[round.round_type]
       )).length;
       if (available < round.question_count) {
-        errors.push(shortageMessage(companyName, round.round_type, round.question_count, available));
+        errors.push(await explainShortage(
+          Bank,
+          round,
+          companyName,
+          round.question_count,
+          available,
+          null,
+          questionIdsByType[round.round_type]
+        ));
       }
     }
   }

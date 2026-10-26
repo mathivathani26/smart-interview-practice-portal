@@ -23,6 +23,12 @@ const LANGUAGE_IDS = {
 
 const JUDGE0_HOST = "judge0-ce.p.rapidapi.com";
 
+function getRapidApiKey() {
+  return typeof process.env.RAPIDAPI_KEY === "string"
+    ? process.env.RAPIDAPI_KEY.trim()
+    : "";
+}
+
 function executionError(code, message, statusCode) {
   const error = new Error(message);
   error.code = code;
@@ -32,14 +38,16 @@ function executionError(code, message, statusCode) {
 
 function redactSensitiveText(value) {
   let text = String(value || "Unknown execution error");
-  if (process.env.RAPIDAPI_KEY) {
-    text = text.split(process.env.RAPIDAPI_KEY).join("[redacted]");
+  const rapidApiKey = getRapidApiKey();
+  if (rapidApiKey) {
+    text = text.split(rapidApiKey).join("[redacted]");
   }
   return text.replace(/mongodb(?:\+srv)?:\/\/\S+/gi, "[redacted MongoDB URI]");
 }
 
 async function runAgainstJudge0(code, language, testCases) {
   const languageId = LANGUAGE_IDS[language.toLowerCase()];
+  const rapidApiKey = getRapidApiKey();
   const results = [];
 
   for (const [index, tc] of testCases.entries()) {
@@ -54,20 +62,27 @@ async function runAgainstJudge0(code, language, testCases) {
         {
           headers: {
             "content-type": "application/json",
-            "X-RapidAPI-Key": process.env.RAPIDAPI_KEY,
+            "X-RapidAPI-Key": rapidApiKey,
             "X-RapidAPI-Host": JUDGE0_HOST,
           },
           timeout: 15000,
         }
       );
 
+      const judgeVerdict = submitRes.data
+        && submitRes.data.status
+        && submitRes.data.status.description;
+      if (typeof judgeVerdict !== "string" || !judgeVerdict.trim()) {
+        throw executionError(
+          "CODE_EXECUTION_FAILED",
+          "Judge0 returned an invalid execution result.",
+          502
+        );
+      }
       const actual = (submitRes.data.stdout || "").trim();
       const expected = (tc.expected_output || "").trim();
       // Judge0's own status description: "Accepted", "Wrong Answer",
       // "Time Limit Exceeded", "Runtime Error", "Compilation Error", etc.
-      const judgeVerdict = submitRes.data.status
-        ? submitRes.data.status.description
-        : (actual === expected ? "Accepted" : "Wrong Answer");
       if (["In Queue", "Processing", "Internal Error"].includes(judgeVerdict)) {
         throw executionError(
           "CODE_EXECUTION_FAILED",
@@ -161,7 +176,7 @@ async function runCode(code, language, testCases) {
     }));
   }
 
-  if (process.env.RAPIDAPI_KEY) {
+  if (getRapidApiKey()) {
     return runAgainstJudge0(code, normalizedLanguage, testCases);
   }
 
@@ -173,8 +188,8 @@ async function runCode(code, language, testCases) {
     );
   }
 
-  // No Judge0 key — try real local execution only in development.
-  if (isLocallySupported(normalizedLanguage)) {
+  // Local execution is intentionally limited to explicit local development.
+  if (process.env.NODE_ENV === "development" && isLocallySupported(normalizedLanguage)) {
     return runLocal(code, normalizedLanguage, testCases);
   }
 

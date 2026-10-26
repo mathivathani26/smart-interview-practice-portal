@@ -34,6 +34,17 @@ test("production code execution requires Judge0 instead of running submissions l
   });
 });
 
+test("local execution is disabled unless NODE_ENV is explicitly development", async () => {
+  await withEnvironment({ NODE_ENV: undefined, RAPIDAPI_KEY: undefined }, async () => {
+    await assert.rejects(
+      runCode("console.log('unsafe fallback')", "javascript", [
+        { input: "", expected_output: "unsafe fallback", hidden: false },
+      ]),
+      { code: "CODE_EXECUTION_NOT_CONFIGURED" }
+    );
+  });
+});
+
 test("local JavaScript execution remains available outside production", async () => {
   await withEnvironment({ NODE_ENV: "development", RAPIDAPI_KEY: undefined }, async () => {
     const [result] = await runCode("console.log('4')", "javascript", [
@@ -78,8 +89,8 @@ test("sends every selectable language to its matching Judge0 language ID", async
   const requests = [];
   process.env.NODE_ENV = "production";
   process.env.RAPIDAPI_KEY = "test-only-judge-key";
-  axios.post = async (url, body) => {
-    requests.push({ url, body });
+  axios.post = async (url, body, config) => {
+    requests.push({ url, body, config });
     return { data: { status: { description: "Accepted" }, stdout: "42", time: "0.01", memory: 1024 } };
   };
 
@@ -100,6 +111,8 @@ test("sends every selectable language to its matching Judge0 language ID", async
       assert.equal(request.body.language_id, languageId);
       assert.equal(request.body.source_code, "print(42)");
       assert.equal(request.body.stdin, "input");
+      assert.equal(request.config.headers["X-RapidAPI-Key"], "test-only-judge-key");
+      assert.equal(request.config.headers["X-RapidAPI-Host"], "judge0-ce.p.rapidapi.com");
     }
     assert.equal(requests.length, expectedLanguages.length);
   } finally {
@@ -108,6 +121,40 @@ test("sends every selectable language to its matching Judge0 language ID", async
     if (original.rapidApiKey === undefined) delete process.env.RAPIDAPI_KEY;
     else process.env.RAPIDAPI_KEY = original.rapidApiKey;
     axios.post = original.axiosPost;
+  }
+});
+
+test("trims the configured RapidAPI key and rejects incomplete Judge0 responses", async () => {
+  const original = {
+    nodeEnv: process.env.NODE_ENV,
+    rapidApiKey: process.env.RAPIDAPI_KEY,
+    axiosPost: axios.post,
+    consoleError: console.error,
+  };
+  let headers;
+  process.env.NODE_ENV = "production";
+  process.env.RAPIDAPI_KEY = "  test-only-judge-key  ";
+  console.error = () => {};
+  axios.post = async (_url, _body, config) => {
+    headers = config.headers;
+    return { data: { stdout: "expected but no provider verdict" } };
+  };
+
+  try {
+    await assert.rejects(
+      runCode("print('expected but no provider verdict')", "python3", [
+        { input: "", expected_output: "expected but no provider verdict", hidden: false },
+      ]),
+      { code: "CODE_EXECUTION_FAILED", statusCode: 502 }
+    );
+    assert.equal(headers["X-RapidAPI-Key"], "test-only-judge-key");
+  } finally {
+    if (original.nodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = original.nodeEnv;
+    if (original.rapidApiKey === undefined) delete process.env.RAPIDAPI_KEY;
+    else process.env.RAPIDAPI_KEY = original.rapidApiKey;
+    axios.post = original.axiosPost;
+    console.error = original.consoleError;
   }
 });
 
